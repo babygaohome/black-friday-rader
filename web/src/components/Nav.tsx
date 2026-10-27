@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 
 const LINKS = [
   ["/dashboard", "Dashboard"],
+  ["/products", "Products"],
   ["/watchlist", "Watchlist"],
   ["/deals", "Deals"],
   ["/war-room", "War Room"],

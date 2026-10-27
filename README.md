@@ -33,6 +33,11 @@ docker compose exec api python -m dealradar.cli make-admin 你的邮箱
 
 `init` 服务每次启动会执行一次 `python -m dealradar.cli migrate`（Alembic 迁移到最新，已是最新则不做事；以前用 `init-db` 建的库会先自动识别并 stamp，再补齐缺的迁移）。`PUBLIC_API_URL` 在构建前端镜像时写入，浏览器直接访问它，所以要改地址需重新 `docker compose build frontend`。
 
+### 搜索与分类
+
+`GET /products?q=&category=&limit=&offset=`：在已追踪的商品里搜索（关键词每个词都要出现在名称、品牌或型号里），可按分类筛选并翻页；`GET /categories` 返回有商品的分类和数量。分类按商品名关键词自动判断（`dealradar/normalization/category.py`：手机、平板、笔记本、电视、音频、相机、游戏、穿戴、家电、网络、存储等，其余归“其他”），新商品入库时自动分类，迁移 0003 会给已有商品回填。前端 Products 页有搜索框和分类标签。
+
+这是搜索已追踪的商品，不会实时去各家网站搜；要追踪新商品仍然是在 Dashboard 粘贴链接。
 ### HTTPS（Caddy 反向代理）
 
 需要两个指向本机的域名（前端一个、API 一个），开放 80/443。在 `.env` 里设 `APP_DOMAIN`、`API_DOMAIN`，并把 `PUBLIC_API_URL`、`DEALRADAR_CORS_ORIGINS` 改成 `https://` 地址，然后：

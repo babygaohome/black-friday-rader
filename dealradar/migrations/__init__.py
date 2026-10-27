@@ -11,6 +11,7 @@ from dealradar.core.db import make_engine
 
 INITIAL = "0001_initial"
 OFFER_BACKOFF = "0002_offer_next_scan_after"
+PRODUCT_CATEGORY = "0003_product_category"
 
 
 def alembic_config(url: str) -> Config:
@@ -26,8 +27,9 @@ def _legacy_revision(sync_conn) -> str | None:
     tables = set(insp.get_table_names())
     if "alembic_version" in tables or "offers" not in tables:
         return None
-    columns = {c["name"] for c in insp.get_columns("offers")}
-    return OFFER_BACKOFF if "next_scan_after" in columns else INITIAL
+    if "category" in {c["name"] for c in insp.get_columns("products")}:
+        return PRODUCT_CATEGORY
+    return OFFER_BACKOFF if "next_scan_after" in {c["name"] for c in insp.get_columns("offers")} else INITIAL
 
 
 async def _detect_legacy(url: str) -> str | None:

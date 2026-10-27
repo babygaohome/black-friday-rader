@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dealradar.matching.attributes import extract, variant_key
 from dealradar.matching.matcher import Candidate, MatchResult, ProductRef, match
 from dealradar.models import MatchReview, Offer, Product, ProductVariant, Retailer
+from dealradar.normalization.category import classify
 from dealradar.normalization.pipeline import NormalizedOffer, normalize_offer
 from dealradar.retailers.base import RetailerAdapter
 from dealradar.retailers.registry import RetailerRegistry
@@ -59,7 +60,8 @@ async def match_or_create_product(
 
     attrs = extract(norm.title, norm.brand)
     key = variant_key(norm.brand or attrs.brand, attrs, norm.mpn or "")
-    product = Product(brand=norm.brand or "", name=norm.title, gtin=norm.gtin, mpn=norm.mpn, variant_signature=key or None)
+    product = Product(brand=norm.brand or "", name=norm.title, gtin=norm.gtin, mpn=norm.mpn, variant_signature=key or None,
+                      category=classify(norm.title, norm.brand or ""))
     session.add(product)
     await session.flush()
     if key and (await session.execute(select(ProductVariant.id).where(ProductVariant.variant_key == key))).first() is None:
