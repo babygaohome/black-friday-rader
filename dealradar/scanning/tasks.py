@@ -7,13 +7,11 @@ from kombu import Queue
 
 from dealradar import runtime
 from dealradar.core.config import get_settings
+from dealradar.scanning.queues import QUEUE_NAMES
 
 settings = get_settings()
 celery_app = Celery("dealradar", broker=settings.redis_url, backend=settings.redis_url)
-celery_app.conf.task_queues = [
-    Queue(name)
-    for name in ("scan.high", "scan.normal", "scan.low", "alert.high", "alert.normal", "notification", "maintenance")
-]
+celery_app.conf.task_queues = [Queue(name) for name in QUEUE_NAMES]
 celery_app.conf.task_default_queue = "scan.normal"
 celery_app.conf.task_acks_late = True
 celery_app.conf.worker_prefetch_multiplier = 1  # low-priority backlog must not hold high-priority jobs

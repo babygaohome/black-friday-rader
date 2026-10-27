@@ -32,6 +32,7 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(100), default="")
     timezone: Mapped[str] = mapped_column(String(64), default="Australia/Sydney")
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)  # granted only via the CLI, never through the API
 
     preferences: Mapped["UserPreference"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
 
