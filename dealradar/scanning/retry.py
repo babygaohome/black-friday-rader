@@ -11,6 +11,9 @@ NO_RETRY = {ScanErrorType.PRODUCT_REMOVED, ScanErrorType.PARSE_ERROR, ScanErrorT
 SLOW_RETRY = {ScanErrorType.RATE_LIMIT: 600, ScanErrorType.CAPTCHA: 1800}
 
 
+GIVE_UP_COOLDOWN = timedelta(hours=1)  # after a non-retryable error or exhausted retries: slow, not never
+
+
 def retry_delay(error: ScanErrorType, attempt: int, rng: random.Random | None = None) -> timedelta | None:
     """Delay before retry number `attempt` (0-based), with +/-20% jitter; None = stop retrying."""
     r = rng or random
@@ -25,3 +28,8 @@ def retry_delay(error: ScanErrorType, attempt: int, rng: random.Random | None = 
             return None
         base = NETWORK_BACKOFF[attempt]
     return timedelta(seconds=base * r.uniform(0.8, 1.2))
+
+
+def next_attempt_delay(error: ScanErrorType, consecutive_failures: int, rng: random.Random | None = None) -> timedelta:
+    """How long an offer rests after a failed scan. Never zero, so a broken page or a blocked retailer is not hammered."""
+    return retry_delay(error, consecutive_failures, rng) or GIVE_UP_COOLDOWN
