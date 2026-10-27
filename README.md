@@ -38,6 +38,20 @@ docker compose exec api python -m dealradar.cli make-admin 你的邮箱
 `GET /products?q=&category=&limit=&offset=`：在已追踪的商品里搜索（关键词每个词都要出现在名称、品牌或型号里），可按分类筛选并翻页；`GET /categories` 返回有商品的分类和数量。分类按商品名关键词自动判断（`dealradar/normalization/category.py`：手机、平板、笔记本、电视、音频、相机、游戏、穿戴、家电、网络、存储等，其余归“其他”），新商品入库时自动分类，迁移 0003 会给已有商品回填。前端 Products 页有搜索框和分类标签。
 
 这是搜索已追踪的商品，不会实时去各家网站搜；要追踪新商品仍然是在 Dashboard 粘贴链接。
+### HTTPS（Caddy 反向代理）
+
+需要两个指向本机的域名（前端一个、API 一个），开放 80/443。在 `.env` 里设 `APP_DOMAIN`、`API_DOMAIN`，并把 `PUBLIC_API_URL`、`DEALRADAR_CORS_ORIGINS` 改成 `https://` 地址，然后：
+
+```bash
+docker compose build frontend
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+```
+
+Caddy 自动申请和续期 Let's Encrypt 证书，WebSocket 无需额外配置；3000/8000 端口不再对外开放。
+
+### Black Friday 模式
+
+`DEALRADAR_EVENT_MODE=BLACK_FRIDAY`：扫描间隔减半，`deal.created` 推送阈值从 85 提到 90（全场打折时只推最强的）。阈值可用 `DEALRADAR_DEAL_MIN_SCORE`、`DEALRADAR_BLACK_FRIDAY_DEAL_MIN_SCORE` 调整。文档没给具体规则，这是假设值。
 
 ## 运行（不用 Docker）
 
