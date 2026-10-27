@@ -1,0 +1,8 @@
+{
+ "Errors": [
+  {
+   "Code": "TooManyRequests",
+   "Message": "The request was denied due to request throttling."
+  }
+ ]
+}

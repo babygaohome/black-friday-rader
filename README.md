@@ -25,6 +25,7 @@ celery -A dealradar.scanning.tasks beat           # 每 15 秒分发到期扫描
 ```
 
 环境变量均以 `DEALRADAR_` 为前缀（`DATABASE_URL`、`REDIS_URL`、`SECRET_KEY`、`TELEGRAM_BOT_TOKEN`、`EVENT_MODE`）。
+Amazon AU 走官方 Product Advertising API（不抓网页），只有配置了 `DEALRADAR_AMAZON_PAAPI_ACCESS_KEY`、`DEALRADAR_AMAZON_PAAPI_SECRET_KEY`、`DEALRADAR_AMAZON_PAAPI_PARTNER_TAG`（Amazon Associates 账号）才会启用。
 新增零售商：实现 `RetailerAdapter`，并在 `dealradar/retailers/builtin.py` 注册一行。
 
 ## 开发

@@ -1,0 +1,49 @@
+{
+ "ItemsResult": {
+  "Items": [
+   {
+    "ASIN": "B0ABC12345",
+    "DetailPageURL": "https://www.amazon.com.au/dp/B0ABC12345?tag=x-22",
+    "ItemInfo": {
+     "Title": {
+      "DisplayValue": "Sony WH-1000XM6 Wireless Headphones, Black"
+     },
+     "ByLineInfo": {
+      "Brand": {
+       "DisplayValue": "Sony"
+      }
+     },
+     "ExternalIds": {
+      "EANs": {
+       "DisplayValues": [
+        "4548736145871"
+       ]
+      }
+     },
+     "ManufactureInfo": {
+      "Model": {
+       "DisplayValue": "WH1000XM6B"
+      }
+     }
+    },
+    "Offers": {
+     "Listings": [
+      {
+       "Price": {
+        "Amount": 549.0,
+        "Currency": "AUD"
+       },
+       "Availability": {
+        "Type": "Now",
+        "Message": "In stock"
+       },
+       "MerchantInfo": {
+        "Name": "Amazon.com.au"
+       }
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

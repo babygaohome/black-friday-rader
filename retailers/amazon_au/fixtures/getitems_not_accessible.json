@@ -1,0 +1,8 @@
+{
+ "Errors": [
+  {
+   "Code": "ItemNotAccessible",
+   "Message": "The ItemId B0ABC12345 is not accessible through the Product Advertising API."
+  }
+ ]
+}
