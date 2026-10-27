@@ -180,3 +180,62 @@ async def test_invalid_price_is_a_failed_scan(session):
     offer, rec = await make_offer(session), Recorder()
     res = await scan_offer(session, offer, ScriptedAdapter(raw("n/a")), MemoryLock(), rec.bus)
     assert res.status == "FAILED" and res.error_type == ScanErrorType.INVALID_PRICE
+
+
+# ---------- failure backoff ----------
+def _rest_seconds(offer, job_finished):
+    return (offer.next_scan_after - job_finished).total_seconds()
+
+
+async def _fail(session, offer, error):
+    res = await scan_offer(session, offer, ScriptedAdapter(ScanError(error)), MemoryLock(), Recorder().bus)
+    job = (await session.execute(select(ScanJob).order_by(ScanJob.started_at.desc()).limit(1))).scalars().first()
+    return res, job
+
+
+async def test_repeated_network_failures_back_off_then_slow_down(session):
+    offer = await make_offer(session)
+    rests = []
+    for _ in range(5):
+        _, job = await _fail(session, offer, ScanErrorType.NETWORK_ERROR)
+        rests.append(_rest_seconds(offer, job.finished_at))
+        assert job.next_scan_at == offer.next_scan_after
+    for got, base in zip(rests, (30, 120, 600, 3600, 3600)):  # 30s / 2min / 10min, then the hourly cooldown
+        assert base * 0.8 - 1 <= got <= base * 1.2 + 1, rests
+
+
+async def test_blocks_and_dead_pages_rest_longer(session):
+    for error, base in ((ScanErrorType.CAPTCHA, 1800), (ScanErrorType.RATE_LIMIT, 600),
+                        (ScanErrorType.PARSE_ERROR, 3600), (ScanErrorType.PRODUCT_REMOVED, 3600)):
+        offer = await make_offer_for(session, error.value)
+        _, job = await _fail(session, offer, error)
+        assert base * 0.8 - 1 <= _rest_seconds(offer, job.finished_at) <= base * 1.2 + 1, error
+
+
+async def make_offer_for(session, sku):
+    from dealradar.models import Retailer as R
+
+    retailer = (await session.execute(select(R))).scalars().first() or R(code="jbhifi", name="JB", domain="jbhifi.com.au")
+    session.add(retailer)
+    await session.flush()
+    o = Offer(retailer_id=retailer.id, retailer_sku=sku, url="https://www.jbhifi.com.au/p", title="")
+    session.add(o)
+    await session.flush()
+    return o
+
+
+async def test_success_clears_the_backoff(session):
+    offer = await make_offer(session)
+    await _fail(session, offer, ScanErrorType.NETWORK_ERROR)
+    assert offer.next_scan_after is not None
+    res = await scan_offer(session, offer, ScriptedAdapter(raw()), MemoryLock(), Recorder().bus)
+    assert res.status == "OK" and offer.next_scan_after is None
+
+
+async def test_failure_streak_resets_after_a_success(session):
+    offer = await make_offer(session)
+    for _ in range(3):
+        await _fail(session, offer, ScanErrorType.NETWORK_ERROR)
+    await scan_offer(session, offer, ScriptedAdapter(raw()), MemoryLock(), Recorder().bus)
+    _, job = await _fail(session, offer, ScanErrorType.NETWORK_ERROR)
+    assert 24 - 1 <= _rest_seconds(offer, job.finished_at) <= 36 + 1  # back to the first (30s) step
