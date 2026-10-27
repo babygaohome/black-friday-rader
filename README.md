@@ -13,6 +13,19 @@
 | C | JB Hi-Fi 连接器 |
 | D | 扫描调度与任务队列 |
 | E | 告警引擎与 Telegram 通知 |
+| F | HTTP API、Celery 接线、扫描分发（可插拔零售商注册表） |
+| G1–G4 | Officeworks / Good Guys / Harvey Norman / Amazon AU 连接器 |
+
+## 运行
+
+```bash
+uvicorn dealradar.main:app                       # API
+celery -A dealradar.scanning.tasks worker -Q scan.high,scan.normal,scan.low,notification,maintenance
+celery -A dealradar.scanning.tasks beat           # 每 15 秒分发到期扫描
+```
+
+环境变量均以 `DEALRADAR_` 为前缀（`DATABASE_URL`、`REDIS_URL`、`SECRET_KEY`、`TELEGRAM_BOT_TOKEN`、`EVENT_MODE`）。
+新增零售商：实现 `RetailerAdapter`，并在 `dealradar/retailers/builtin.py` 注册一行。
 
 ## 开发
 
