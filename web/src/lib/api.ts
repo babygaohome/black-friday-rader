@@ -90,6 +90,22 @@ export interface ProductRow {
   id: string;
   name: string;
   brand: string;
+  category: string | null;
+  best_price: Num;
+  offer_count: number;
+}
+
+export interface Category {
+  slug: string;
+  name: string;
+  count: number;
+}
+
+export function productsQuery(q: string, category: string, limit: number, offset = 0): string {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (q.trim()) params.set("q", q.trim());
+  if (category) params.set("category", category);
+  return `/products?${params}`;
 }
 
 export interface ProductDetail {
@@ -161,6 +177,9 @@ export const api = {
   patchMe: (body: { display_name?: string; timezone?: string; telegram_chat_id?: string }) =>
     request<Me>("/users/me", { method: "PATCH", json: body }),
   products: (q = "", limit = 200) => request<ProductRow[]>(`/products?q=${encodeURIComponent(q)}&limit=${limit}`),
+  searchProducts: (q: string, category: string, limit = 24, offset = 0) =>
+    request<ProductRow[]>(productsQuery(q, category, limit, offset)),
+  categories: () => request<Category[]>("/categories"),
   product: (id: string) => request<ProductDetail>(`/products/${id}`),
   offers: (id: string) => request<OfferRow[]>(`/products/${id}/offers`),
   history: (id: string) => request<HistoryPoint[]>(`/products/${id}/history?limit=1000`),

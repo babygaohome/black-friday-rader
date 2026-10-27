@@ -45,6 +45,18 @@ const assert = require('node:assert/strict');
   await page.locator('svg[aria-label="Price history"]').waitFor({ timeout: 10000 });
   await page.screenshot({ path: '/tmp/e2e/product.png', fullPage: true });
 
+  await page.getByRole('link', { name: 'Products' }).click();
+  await page.waitForURL(/\/products$/);
+  await page.getByRole('button', { name: /^Audio & headphones \(1\)/ }).waitFor();
+  await page.getByLabel('Search products').fill('sony');
+  await page.locator('.card .title', { hasText: 'Sony' }).waitFor();
+  await page.getByRole('button', { name: /^Audio & headphones/ }).click();
+  await page.locator('.card .title', { hasText: 'Sony' }).waitFor();
+  await page.getByLabel('Search products').fill('nonexistent-zzz');
+  await page.getByText('No products match').waitFor();
+  console.log('products search/category ok');
+  await page.screenshot({ path: '/tmp/e2e/products.png', fullPage: true });
+
   for (const path of ['/watchlist', '/deals', '/settings']) {
     await page.goto('http://localhost:3000' + path);
     await page.locator('h1').waitFor();

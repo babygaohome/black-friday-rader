@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { productsQuery } from "./api";
 import { ago, money, pct, stockLabel } from "./format";
 
 describe("money", () => {
@@ -41,4 +42,13 @@ describe("ago", () => {
 it("stockLabel is human readable", () => {
   expect(stockLabel("OUT_OF_STOCK")).toBe("out of stock");
   expect(stockLabel(undefined)).toBe("unknown");
+});
+
+describe("productsQuery", () => {
+  it("builds search, category and paging parameters", () => {
+    expect(productsQuery("  sony headphones ", "audio", 25, 24)).toBe("/products?limit=25&offset=24&q=sony+headphones&category=audio");
+  });
+  it("omits empty filters", () => {
+    expect(productsQuery("", "", 10)).toBe("/products?limit=10&offset=0");
+  });
 });

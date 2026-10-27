@@ -9,13 +9,14 @@ from decimal import Decimal
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from dealradar.admin_ops import QueueStats, WorkerStats
 from dealradar.api.admin import build_admin_router
 from dealradar.core.security import issue_token, verify_token
 from dealradar.models import Alert, Offer, PriceHistory, Priority, Product, User, WatchItem
 from dealradar.retailers.base import ScanError, UnsupportedUrl
+from dealradar.normalization.category import CATEGORIES
 from dealradar.observability.logs import log_event
 from dealradar.observability.metrics import AppMetrics, db_metrics
 from dealradar.realtime.hub import TOPICS, Hub, Relay, dumps
@@ -265,11 +266,39 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         }
 
     @app.get("/products")
-    async def products(q: str = "", limit: int = 50, user: User = Depends(current_user), session=Depends(db)):
-        stmt = select(Product).order_by(Product.created_at.desc()).limit(min(max(limit, 1), 200))
-        if q.strip():
-            stmt = stmt.where(Product.name.ilike(f"%{q.strip()}%"))
-        return [{"id": str(p.id), "name": p.name, "brand": p.brand} for p in (await session.execute(stmt)).scalars()]
+    async def products(
+        q: str = "", category: str = "", limit: int = 50, offset: int = 0,
+        user: User = Depends(current_user), session=Depends(db),
+    ):
+        """Search tracked products: every word in `q` must appear in the name, brand or model."""
+        stmt = select(Product).order_by(Product.created_at.desc(), Product.id)
+        for word in q.split()[:8]:
+            like = f"%{word}%"
+            stmt = stmt.where(or_(Product.name.ilike(like), Product.brand.ilike(like), Product.model.ilike(like)))
+        if category.strip():
+            stmt = stmt.where(Product.category == category.strip())
+        stmt = stmt.limit(min(max(limit, 1), 200)).offset(max(offset, 0))
+        rows = (await session.execute(stmt)).scalars().all()
+        best: dict = {}
+        if rows:
+            agg = await session.execute(
+                select(Offer.product_id, func.min(Offer.current_effective_price), func.count(Offer.id))
+                .where(Offer.product_id.in_([p.id for p in rows]), Offer.active.is_(True))
+                .group_by(Offer.product_id)
+            )
+            best = {pid: (price, n) for pid, price, n in agg.all()}
+        return [
+            {"id": str(p.id), "name": p.name, "brand": p.brand, "category": p.category,
+             "best_price": best.get(p.id, (None, 0))[0], "offer_count": best.get(p.id, (None, 0))[1]}
+            for p in rows
+        ]
+
+    @app.get("/categories")
+    async def categories(user: User = Depends(current_user), session=Depends(db)):
+        counts = dict((await session.execute(
+            select(Product.category, func.count(Product.id)).group_by(Product.category))).all())
+        return [{"slug": slug, "name": name, "count": counts.get(slug, 0)}
+                for slug, name in CATEGORIES.items() if counts.get(slug, 0)]
 
     async def _product(session, product_id: uuid.UUID) -> Product:
         p = await session.get(Product, product_id)
@@ -286,7 +315,7 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         metrics = await compute_metrics(session, best.id) if best else None
         analysis = await analyze_offer(session, best) if best else None
         return {
-            "id": str(p.id), "name": p.name, "brand": p.brand,
+            "id": str(p.id), "name": p.name, "brand": p.brand, "category": p.category,
             "best_price": best.current_effective_price if best else None,
             "deal": None if analysis is None else {
                 "deal_score": analysis.score.score, "grade": analysis.score.grade, "verified": analysis.score.verified,

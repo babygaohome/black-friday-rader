@@ -58,6 +58,7 @@ class Product(TimestampMixin, Base):
     model: Mapped[str] = mapped_column(String(200), default="")
     name: Mapped[str] = mapped_column(String(500))
     category_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)  # slug from normalization.category
     gtin: Mapped[str | None] = mapped_column(String(14), index=True, nullable=True)
     ean: Mapped[str | None] = mapped_column(String(14), nullable=True)
     upc: Mapped[str | None] = mapped_column(String(14), nullable=True)
