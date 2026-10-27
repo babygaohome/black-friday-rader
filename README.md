@@ -15,6 +15,8 @@
 | E | 告警引擎与 Telegram 通知 |
 | F | HTTP API、Celery 接线、扫描分发（可插拔零售商注册表） |
 | G1–G4 | Officeworks / Good Guys / Harvey Norman / Amazon AU 连接器 |
+| H / I | 商品匹配与人工复核；Deal Score 与假折扣识别 |
+| J | WebSocket 实时推送 `/ws?token=…&topics=…`（price.updated / stock.updated / deal.created / alert.triggered / scanner.status）；worker 经 Redis pub/sub 推给各 API 进程 |
 
 ## 运行
 

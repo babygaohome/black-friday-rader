@@ -1,4 +1,5 @@
 """Alert engine (M13): decides whether a user should be told. Deal analysis (scores) lives elsewhere."""
+import logging
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
@@ -13,6 +14,8 @@ from dealradar.services.history import prior_stats
 from dealradar.models import (
     Alert, AlertType, Notification, Offer, StockStatus, UserPreference, WatchItem,
 )
+
+log = logging.getLogger(__name__)
 
 _BUYABLE = {StockStatus.IN_STOCK, StockStatus.LOW_STOCK}
 _RESTOCK_FROM = {StockStatus.OUT_OF_STOCK, StockStatus.BACKORDER}
@@ -85,9 +88,10 @@ async def _emit(
 
 
 class AlertEngine:
-    def __init__(self, session_factory, cooldown: CooldownStore, notifier=None):
+    def __init__(self, session_factory, cooldown: CooldownStore, notifier=None, on_alert=None):
         self._sf = session_factory
         self._cooldown = cooldown
+        self._on_alert = on_alert  # optional async callback(alert), e.g. realtime push; errors are swallowed
         self._notifier = notifier  # optional TelegramNotifier-like with .deliver(session, notification_id)
 
     async def _watchers(self, session: AsyncSession, offer: Offer) -> list[WatchItem]:
@@ -121,6 +125,12 @@ class AlertEngine:
             for _, notes in emitted:
                 for n in notes:
                     await self._notifier.deliver(session, n.id)
+        if self._on_alert:
+            for alert, _ in emitted:
+                try:
+                    await self._on_alert(alert)
+                except Exception:
+                    log.exception("on_alert callback failed")
         return [a for a, _ in emitted]
 
     def register(self, bus) -> None:
