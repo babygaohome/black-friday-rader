@@ -19,13 +19,33 @@ def load(name):
     return (FIX / name).read_text()
 
 
-def test_normal_price():
-    raw = parse_product(load("harvey_norman_product_normal.html"), URL)
+REAL = "https://www.harveynorman.com.au/"
+
+
+# Real pages fetched 2026-10-27 (trimmed to the JSON-LD and the price card).
+def test_real_normal_price():
+    raw = parse_product(load("harvey_norman_real_normal.html"), REAL + "caroma-urbane-ii-compact-twin-shower-chrome.html")
     n = normalize_offer(raw)
-    assert raw.retailer == "harveynorman" and raw.retailer_sku == "MC6T4X/A"
-    assert n.price.item_price == Decimal("549.00") and n.price.original_price is None
+    assert (raw.retailer, raw.retailer_sku) == ("harveynorman", "99632C3A")
+    assert n.price.item_price == Decimal("438") and n.price.original_price is None
     assert n.stock == StockStatus.IN_STOCK
-    assert (raw.brand, raw.mpn, raw.gtin) == ("Apple", "MC6T4X/A", "195949000000")
+    assert (raw.brand, raw.gtin) == ("Caroma", "9312547933859")
+
+
+def test_real_out_of_stock():
+    # The page shows "Coming Soon / Pre-Order Available from 29th October"; JSON-LD says OutOfStock.
+    raw = parse_product(load("harvey_norman_real_out_of_stock.html"), REAL + "apple-ipad-mini-wi-fi-128gb-with-standard-glass-midnight.html")
+    n = normalize_offer(raw)
+    assert raw.retailer_sku == "6905727" and n.title == "Apple iPad mini Wi‑Fi 128GB with standard glass - Midnight"
+    assert n.price.item_price == Decimal("1099") and n.stock == StockStatus.OUT_OF_STOCK
+    assert (raw.brand, raw.gtin) == ("Apple", "195951205458")
+
+
+def test_real_preorder():
+    url = REAL + "asus-proart-p14-14-inch-nvidia-rtx-spark-n1x-20-core-32gb-1tb-ssd-3k-120hz-oled-touchscreen-laptop-neo-white.html"
+    n = normalize_offer(parse_product(load("harvey_norman_real_preorder.html"), url))
+    assert n.retailer_sku == "H7407BA-SU300W" and n.price.item_price == Decimal("6499")
+    assert n.stock == StockStatus.PREORDER
 
 
 def test_sku_falls_back_to_url_even_with_query_string():
@@ -34,14 +54,12 @@ def test_sku_falls_back_to_url_even_with_query_string():
     assert raw.retailer_sku == "apple-macbook-air-13-inch-m4-16gb-512gb"
 
 
+# Harvey Norman product pages expose only the current price (no was/RRP) in static HTML,
+# and no discounted real page was found on 2026-10-27; this sale sample stays synthetic.
 def test_sale_price():
     n = normalize_offer(parse_product(load("harvey_norman_sale.html"), URL))
     assert n.price.item_price == Decimal("399.00") and n.price.original_price == Decimal("549.00")
     assert n.price.retailer_discount_pct == Decimal("27.32")
-
-
-def test_out_of_stock():
-    assert normalize_offer(parse_product(load("harvey_norman_out_of_stock.html"), URL)).stock == StockStatus.OUT_OF_STOCK
 
 
 @pytest.mark.parametrize("fixture,error", [
