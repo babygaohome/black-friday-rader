@@ -36,7 +36,7 @@ def scan_offer_task(offer_id: str) -> str:
 
 @celery_app.task(name="dealradar.dispatch_due_scans")
 def dispatch_due_scans_task() -> int:
-    due = _run(runtime.find_due(_fresh_runtime()))
+    due = _run(runtime.claim_due(_fresh_runtime()))
     for d in due:
         scan_offer_task.apply_async(args=[str(d.offer_id)], queue=d.queue)
     return len(due)
