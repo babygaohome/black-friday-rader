@@ -20,3 +20,7 @@
 pip install -e '.[dev]'
 pytest
 ```
+
+## 注意
+
+`retailers/jbhifi/fixtures/` 目前是按 schema.org Product JSON-LD 手写的合成样本，不是从 jbhifi.com.au 抓取的真实页面。上线前需用真实页面保存 fixture 校准解析器。
