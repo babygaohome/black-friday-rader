@@ -28,6 +28,12 @@ def test_normal_price():
     assert (raw.brand, raw.mpn, raw.gtin) == ("Apple", "MC6T4X/A", "195949000000")
 
 
+def test_sku_falls_back_to_url_even_with_query_string():
+    html = """<script type="application/ld+json">{"@type": "Product", "name": "N", "offers": {"price": "5"}}</script>"""
+    raw = parse_product(html, URL + "?utm_source=x")
+    assert raw.retailer_sku == "apple-macbook-air-13-inch-m4-16gb-512gb"
+
+
 def test_sale_price():
     n = normalize_offer(parse_product(load("harvey_norman_sale.html"), URL))
     assert n.price.item_price == Decimal("399.00") and n.price.original_price == Decimal("549.00")
