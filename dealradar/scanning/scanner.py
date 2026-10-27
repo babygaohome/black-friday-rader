@@ -10,6 +10,7 @@ from dealradar.events import EventBus, PriceChanged, StockChanged
 from dealradar.models import Offer, PriceHistory, RetailerHealth, ScanJob, StockStatus
 from dealradar.normalization.pipeline import normalize_offer
 from dealradar.retailers.base import RetailerAdapter, ScanError, ScanErrorType
+from dealradar.scanning.retry import next_attempt_delay
 from dealradar.scanning.locks import LOCK_TTL_SECONDS, LockBackend, scan_lock_key
 from dealradar.services.history import record_snapshot
 
@@ -41,6 +42,20 @@ async def _update_health(session: AsyncSession, retailer_id, ok: bool, error: Sc
     h.status = "ONLINE" if rate >= 0.9 else "DEGRADED" if rate >= 0.5 else "OFFLINE"
 
 
+async def _consecutive_failures(session: AsyncSession, offer_id, current_job_id) -> int:
+    """Failed scans in a row before the current one (capped by what the retry policy looks at)."""
+    statuses = (await session.execute(
+        select(ScanJob.status).where(ScanJob.offer_id == offer_id, ScanJob.id != current_job_id)
+        .order_by(ScanJob.started_at.desc()).limit(10)
+    )).scalars().all()
+    n = 0
+    for status in statuses:
+        if status != "FAILED":
+            break
+        n += 1
+    return n
+
+
 async def scan_offer(
     session: AsyncSession,
     offer: Offer,
@@ -54,6 +69,7 @@ async def scan_offer(
 
     job = ScanJob(offer_id=offer.id, status="RUNNING", started_at=datetime.now(timezone.utc))
     session.add(job)
+    await session.flush()  # assigns job.id, which the failure streak query needs
     try:
         try:
             raw = await adapter.fetch_offer(offer.url)
@@ -69,6 +85,8 @@ async def scan_offer(
         except ScanError as err:
             job.status, job.error_type = "FAILED", err.error_type.value
             job.finished_at = datetime.now(timezone.utc)
+            offer.next_scan_after = job.next_scan_at = job.finished_at + next_attempt_delay(
+                err.error_type, await _consecutive_failures(session, offer.id, job.id))
             await _update_health(session, offer.retailer_id, False, err.error_type)
             await session.commit()
             return ScanResult("FAILED", error_type=err.error_type)
@@ -91,6 +109,7 @@ async def scan_offer(
             offer.stock_status = norm.stock
             offer.title = offer.title or norm.title
 
+        offer.next_scan_after = None
         job.status = "FLAGGED" if flagged else "OK"
         job.finished_at = datetime.now(timezone.utc)
         await _update_health(session, offer.retailer_id, True, None)
