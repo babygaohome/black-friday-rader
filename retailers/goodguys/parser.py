@@ -5,7 +5,7 @@ from dealradar.retailers.base import RawOffer
 from dealradar.retailers.jsonld import parse_product_jsonld
 
 RETAILER = "goodguys"
-_SKU_FROM_URL = re.compile(r"/([^/?#]+)/?$")
+_SKU_FROM_URL = re.compile(r"/([^/?#]+)/?(?:[?#].*)?$")
 
 
 def parse_product(html: str, url: str) -> RawOffer:
