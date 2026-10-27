@@ -11,7 +11,7 @@ from sqlalchemy import select
 from dealradar.core.security import issue_token, verify_token
 from dealradar.models import Alert, Offer, PriceHistory, Priority, Product, User, WatchItem
 from dealradar.retailers.base import ScanError, UnsupportedUrl
-from dealradar.realtime.hub import TOPICS, Hub, Relay
+from dealradar.realtime.hub import TOPICS, Hub, Relay, dumps
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.services import watchlist as watch_svc
 from dealradar.services.catalog import add_from_url
@@ -135,7 +135,7 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
 
         async def pump():
             while True:
-                await ws.send_json(await client.queue.get())
+                await ws.send_text(dumps(await client.queue.get()))  # payloads hold Decimals, which send_json cannot encode
 
         async def listen():
             while True:
