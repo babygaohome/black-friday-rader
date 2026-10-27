@@ -17,6 +17,7 @@
 | G1–G4 | Officeworks / Good Guys / Harvey Norman / Amazon AU 连接器 |
 | H / I | 商品匹配与人工复核；Deal Score 与假折扣识别 |
 | J | WebSocket 实时推送 `/ws?token=…&topics=…`（price.updated / stock.updated / deal.created / alert.triggered / scanner.status）；worker 经 Redis pub/sub 推给各 API 进程 |
+| K | 管理后台 `/admin/*`（管理员角色、零售商健康、队列/worker、失败任务、可疑价格、匹配复核确认/驳回）；用 `python -m dealradar.cli make-admin 邮箱` 授予管理员 |
 
 ## 运行
 

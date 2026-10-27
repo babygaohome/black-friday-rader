@@ -8,6 +8,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket,
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from dealradar.admin_ops import QueueStats, WorkerStats
+from dealradar.api.admin import build_admin_router
 from dealradar.core.security import issue_token, verify_token
 from dealradar.models import Alert, Offer, PriceHistory, Priority, Product, User, WatchItem
 from dealradar.retailers.base import ScanError, UnsupportedUrl
@@ -85,7 +87,8 @@ def _deal_out(offer: Offer, product: Product, a: DealAnalysis) -> dict:
 
 
 def create_app(session_factory, registry: RetailerRegistry, secret_key: str, token_ttl: int = 7 * 24 * 3600,
-               hub: Hub | None = None, relay: Relay | None = None) -> FastAPI:
+               hub: Hub | None = None, relay: Relay | None = None,
+               queue_stats: QueueStats | None = None, worker_stats: WorkerStats | None = None) -> FastAPI:
     """relay: optional long-running coroutine fed the hub (e.g. Redis pub/sub -> hub), run for the app's lifetime."""
     hub = hub or Hub()
 
@@ -114,6 +117,8 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         if user is None or user.status != "ACTIVE":
             raise HTTPException(401, "invalid or missing token")
         return user
+
+    app.include_router(build_admin_router(db, current_user, registry.codes, queue_stats, worker_stats))
 
     # ---- realtime (M17) ----
     @app.websocket("/ws")
@@ -183,7 +188,7 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         await session.refresh(user, ["preferences"])
         return {
             "id": str(user.id), "email": user.email, "display_name": user.display_name, "timezone": user.timezone,
-            "telegram_linked": bool(user.preferences and user.preferences.telegram_chat_id),
+            "telegram_linked": bool(user.preferences and user.preferences.telegram_chat_id), "is_admin": user.is_admin,
         }
 
     @app.patch("/users/me")
