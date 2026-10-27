@@ -1,0 +1,27 @@
+[project]
+name = "dealradar"
+version = "0.1.0"
+description = "DealRadar: price + stock intelligence engine"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "sqlalchemy>=2",
+  "aiosqlite",
+  "asyncpg",
+  "celery",
+  "redis",
+  "httpx",
+  "beautifulsoup4",
+  "pydantic-settings",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["dealradar*"]
