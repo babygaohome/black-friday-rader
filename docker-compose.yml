@@ -1,0 +1,103 @@
+# DealRadar: frontend, api, worker, scheduler, postgres, redis (design doc section 48).
+#   cp .env.example .env   # fill in the passwords
+#   docker compose up --build
+# Then, after registering in the web UI:
+#   docker compose exec api python -m dealradar.cli make-admin you@example.com
+
+x-backend: &backend
+  build: .
+  restart: unless-stopped
+  environment:
+    DEALRADAR_DATABASE_URL: postgresql+asyncpg://dealradar:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/dealradar
+    DEALRADAR_REDIS_URL: redis://redis:6379/0
+    DEALRADAR_SECRET_KEY: ${DEALRADAR_SECRET_KEY:?set DEALRADAR_SECRET_KEY in .env}
+    DEALRADAR_CORS_ORIGINS: ${DEALRADAR_CORS_ORIGINS:-http://localhost:3000}
+    DEALRADAR_EVENT_MODE: ${DEALRADAR_EVENT_MODE:-NORMAL}
+    DEALRADAR_LOG_LEVEL: ${DEALRADAR_LOG_LEVEL:-INFO}
+    DEALRADAR_TELEGRAM_BOT_TOKEN: ${DEALRADAR_TELEGRAM_BOT_TOKEN:-}
+    DEALRADAR_AMAZON_PAAPI_ACCESS_KEY: ${DEALRADAR_AMAZON_PAAPI_ACCESS_KEY:-}
+    DEALRADAR_AMAZON_PAAPI_SECRET_KEY: ${DEALRADAR_AMAZON_PAAPI_SECRET_KEY:-}
+    DEALRADAR_AMAZON_PAAPI_PARTNER_TAG: ${DEALRADAR_AMAZON_PAAPI_PARTNER_TAG:-}
+
+x-after-init: &after-init
+  depends_on:
+    init: {condition: service_completed_successfully}
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dealradar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: dealradar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dealradar -d dealradar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-off: creates missing tables (until Alembic migrations exist). Safe to run on every start.
+  init:
+    <<: *backend
+    restart: "no"
+    command: ["python", "-m", "dealradar.cli", "init-db"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  api:
+    <<: [*backend, *after-init]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  worker:
+    <<: [*backend, *after-init]
+    command:
+      - celery
+      - -A
+      - dealradar.scanning.tasks
+      - worker
+      - -l
+      - info
+      - -Q
+      - scan.high,scan.normal,scan.low,alert.high,alert.normal,notification,maintenance
+
+  scheduler:
+    <<: [*backend, *after-init]
+    command: ["celery", "-A", "dealradar.scanning.tasks", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
+
+  frontend:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
