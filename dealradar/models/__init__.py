@@ -1,7 +1,8 @@
-from dealradar.models.enums import AlertType, NotificationStatus, Priority, StockStatus
+from dealradar.models.enums import AlertType, NotificationStatus, Priority, ReviewStatus, StockStatus
 from dealradar.models.tables import (
     Alert,
     AlertRule,
+    MatchReview,
     Notification,
     Offer,
     PriceHistory,
@@ -17,6 +18,6 @@ from dealradar.models.tables import (
 
 __all__ = [
     "Alert", "AlertRule", "AlertType", "Notification", "NotificationStatus", "Offer", "PriceHistory",
-    "Priority", "Product", "ProductVariant", "Retailer", "RetailerHealth", "ScanJob", "StockStatus",
+    "MatchReview", "Priority", "Product", "ReviewStatus", "ProductVariant", "Retailer", "RetailerHealth", "ScanJob", "StockStatus",
     "User", "UserPreference", "WatchItem",
 ]
