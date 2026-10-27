@@ -40,7 +40,19 @@ def test_real_normal_price():
     assert n.stock == StockStatus.IN_STOCK
 
 
+def test_real_sale_price():
+    # Real page fetched 2026-10-27: ListPrice 699 + SalePrice 499 in priceSpecification.
+    url = "https://www.jbhifi.com.au/products/lg-ultragear-g6-27g64na-27-qhd-300hz-gaming-monitor"
+    raw = parse_product(load("jbhifi_real_sale.html"), url)
+    n = normalize_offer(raw)
+    assert raw.retailer_sku == "899041"
+    assert n.price.item_price == Decimal("499.00") and n.price.original_price == Decimal("699.00")
+    assert n.price.retailer_discount_pct == Decimal("28.61")
+    assert n.stock == StockStatus.IN_STOCK
+
+
 def test_sale_price():
+    # Synthetic pair to jbhifi_product_normal.html; scanner/alert tests elsewhere rely on the 549 -> 399 drop.
     n = normalize_offer(parse_product(load("jbhifi_sale.html"), URL))
     assert n.price.item_price == Decimal("399.00")
     assert n.price.original_price == Decimal("549.00")
