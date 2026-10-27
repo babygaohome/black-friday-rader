@@ -67,8 +67,8 @@ def test_cli_init_db_creates_tables(tmp_path, monkeypatch, capsys):
 
     db = tmp_path / "fresh.db"
     monkeypatch.setenv("DEALRADAR_DATABASE_URL", f"sqlite+aiosqlite:///{db}")
-    assert cli.main(["init-db"]) == 0
-    assert "tables ready" in capsys.readouterr().out
+    assert cli.main(["migrate"]) == 0
+    assert "database at latest migration" in capsys.readouterr().out
     tables = {r[0] for r in sqlite3.connect(db).execute("select name from sqlite_master where type='table'")}
     assert {"users", "offers", "price_history", "match_reviews"} <= tables
-    assert cli.main(["init-db"]) == 0  # idempotent
+    assert cli.main(["migrate"]) == 0  # idempotent

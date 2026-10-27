@@ -1,6 +1,6 @@
 import random
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -183,8 +183,14 @@ async def test_invalid_price_is_a_failed_scan(session):
 
 
 # ---------- failure backoff ----------
+def _utc(t):
+    # SQLite hands back naive datetimes when the job is reloaded rather than taken from the identity map
+    # (which holds it only weakly, so which one happens depends on garbage collection)
+    return t if t is None or t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
 def _rest_seconds(offer, job_finished):
-    return (offer.next_scan_after - job_finished).total_seconds()
+    return (_utc(offer.next_scan_after) - _utc(job_finished)).total_seconds()
 
 
 async def _fail(session, offer, error):
@@ -199,7 +205,7 @@ async def test_repeated_network_failures_back_off_then_slow_down(session):
     for _ in range(5):
         _, job = await _fail(session, offer, ScanErrorType.NETWORK_ERROR)
         rests.append(_rest_seconds(offer, job.finished_at))
-        assert job.next_scan_at == offer.next_scan_after
+        assert _utc(job.next_scan_at) == _utc(offer.next_scan_after)
     for got, base in zip(rests, (30, 120, 600, 3600, 3600)):  # 30s / 2min / 10min, then the hourly cooldown
         assert base * 0.8 - 1 <= got <= base * 1.2 + 1, rests
 
