@@ -53,11 +53,11 @@ services:
       timeout: 3s
       retries: 20
 
-  # One-off: creates missing tables (until Alembic migrations exist). Safe to run on every start.
+  # One-off: applies Alembic migrations (no-op when already at the latest). Safe to run on every start.
   init:
     <<: *backend
     restart: "no"
-    command: ["python", "-m", "dealradar.cli", "init-db"]
+    command: ["python", "-m", "dealradar.cli", "migrate"]
     depends_on:
       postgres: {condition: service_healthy}
 

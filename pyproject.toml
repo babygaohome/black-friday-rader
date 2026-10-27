@@ -7,6 +7,7 @@ dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "sqlalchemy[asyncio]>=2",
+  "alembic",
   "aiosqlite",
   "asyncpg",
   "celery",
@@ -26,3 +27,6 @@ pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 include = ["dealradar*", "retailers*"]
+
+[tool.setuptools.package-data]
+"dealradar.migrations" = ["script.py.mako"]
