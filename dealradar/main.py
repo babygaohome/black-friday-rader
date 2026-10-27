@@ -5,11 +5,13 @@ from dealradar.admin_ops import celery_worker_stats, redis_queue_stats
 from dealradar.api.app import create_app
 from dealradar.core.config import get_settings
 from dealradar.core.db import make_engine, make_session_factory
+from dealradar.observability.logs import configure_logging
 from dealradar.realtime.hub import run_redis_relay
 from dealradar.retailers.builtin import build_default_registry
 from dealradar.scanning.tasks import celery_app
 
 _settings = get_settings()
+configure_logging("api", _settings.log_level)
 _redis = aioredis.from_url(_settings.redis_url)
 
 

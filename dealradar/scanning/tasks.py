@@ -7,12 +7,15 @@ from kombu import Queue
 
 from dealradar import runtime
 from dealradar.core.config import get_settings
+from dealradar.observability.logs import configure_logging
 from dealradar.scanning.queues import QUEUE_NAMES
 
 settings = get_settings()
+configure_logging("price-worker", settings.log_level)
 celery_app = Celery("dealradar", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.task_queues = [Queue(name) for name in QUEUE_NAMES]
 celery_app.conf.task_default_queue = "scan.normal"
+celery_app.conf.worker_hijack_root_logger = False  # keep our JSON formatter on the root logger
 celery_app.conf.task_acks_late = True
 celery_app.conf.worker_prefetch_multiplier = 1  # low-priority backlog must not hold high-priority jobs
 celery_app.conf.beat_schedule = {
