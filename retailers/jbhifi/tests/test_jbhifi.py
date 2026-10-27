@@ -51,6 +51,19 @@ def test_parse_errors(fixture, error):
     assert exc.value.error_type == error
 
 
+def test_real_challenge_page_is_captcha():
+    with pytest.raises(ScanError) as exc:
+        parse_product(load("jbhifi_real_challenge_429.html"), URL)
+    assert exc.value.error_type == ScanErrorType.CAPTCHA
+
+
+async def test_real_429_challenge_response_is_captcha_not_rate_limit():
+    # What JB Hi-Fi actually returned to our scanner on 2026-10-27.
+    with pytest.raises(ScanError) as exc:
+        await adapter_with(429, load("jbhifi_real_challenge_429.html")).fetch_product(URL)
+    assert exc.value.error_type == ScanErrorType.CAPTCHA
+
+
 def adapter_with(status, body=""):
     async def fetcher(url):
         return httpx.Response(status, text=body, request=httpx.Request("GET", url))
