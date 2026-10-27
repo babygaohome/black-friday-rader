@@ -5,7 +5,7 @@ description = "DealRadar: price + stock intelligence engine"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi",
-  "sqlalchemy>=2",
+  "sqlalchemy[asyncio]>=2",
   "aiosqlite",
   "asyncpg",
   "celery",
