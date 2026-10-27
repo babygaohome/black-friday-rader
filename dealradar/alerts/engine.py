@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dealradar.alerts.cooldown import CooldownStore, cooldown_key
+from dealradar.observability.logs import log_event
 from dealradar.events import PriceChanged, StockChanged
 from dealradar.services.deals import analyze_offer
 from dealradar.services.history import prior_stats
@@ -125,6 +126,9 @@ class AlertEngine:
             for _, notes in emitted:
                 for n in notes:
                     await self._notifier.deliver(session, n.id)
+        for alert, _ in emitted:
+            log_event(log, "alert_created", alert_id=str(alert.id), type=alert.type.value,
+                      offer_id=str(alert.offer_id), deal_score=alert.deal_score)
         if self._on_alert:
             for alert, _ in emitted:
                 try:

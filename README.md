@@ -18,6 +18,7 @@
 | H / I | 商品匹配与人工复核；Deal Score 与假折扣识别 |
 | J | WebSocket 实时推送 `/ws?token=…&topics=…`（price.updated / stock.updated / deal.created / alert.triggered / scanner.status）；worker 经 Redis pub/sub 推给各 API 进程 |
 | K | 管理后台 `/admin/*`（管理员角色、零售商健康、队列/worker、失败任务、可疑价格、匹配复核确认/驳回）；用 `python -m dealradar.cli make-admin 邮箱` 授予管理员 |
+| L | 监控 `/metrics`（Prometheus 文本格式，管理员 token 抓取：API 延迟/错误/WS 连接数，扫描成功率、解析失败、HTTP 错误、验证码，价格变动、告警）与 JSON 结构化日志（`DEALRADAR_LOG_LEVEL`） |
 
 ## 运行
 

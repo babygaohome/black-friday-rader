@@ -1,4 +1,5 @@
 """Wires settings -> engine, adapters, locks, alert engine. Used by the Celery workers and the API entry point."""
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -11,6 +12,7 @@ from dealradar.core.db import make_engine, make_session_factory
 from dealradar.events import EventBus
 from dealradar.models import Notification, NotificationStatus, Offer, Retailer
 from dealradar.notifications.telegram import TelegramNotifier
+from dealradar.observability.logs import log_event
 from dealradar.realtime.hub import Broadcaster, NullBroadcaster, RedisBroadcaster
 from dealradar.realtime.publisher import RealtimePublisher
 from dealradar.retailers.builtin import build_default_registry
@@ -18,6 +20,9 @@ from dealradar.retailers.registry import RetailerRegistry
 from dealradar.scanning.dispatcher import DueScan, due_scans
 from dealradar.scanning.locks import LockBackend, RedisLock
 from dealradar.scanning.scanner import ScanResult, scan_offer
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,6 +66,12 @@ async def run_scan(rt: Runtime, offer_id: uuid.UUID) -> ScanResult | None:
         if retailer is None or retailer.code not in rt.registry.codes():
             return None
         result = await scan_offer(session, offer, rt.registry.get(retailer.code), rt.lock, rt.bus)
+        log_event(
+            log, f"scan_{result.status.lower()}", logging.WARNING if result.status == "FAILED" else logging.INFO,
+            retailer=retailer.code, offer_id=str(offer_id),
+            error=result.error_type.value.lower() if result.error_type else None,
+            price_changed=result.price_changed or None, stock_changed=result.stock_changed or None,
+        )
         if rt.realtime and result.status != "SKIPPED_LOCKED":
             await rt.realtime.on_scan(
                 retailer.code, offer_id, result.status, result.error_type.value if result.error_type else None)

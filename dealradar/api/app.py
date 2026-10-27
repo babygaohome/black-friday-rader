@@ -1,10 +1,12 @@
 import asyncio
 import contextlib
+import logging
+import time
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -13,6 +15,8 @@ from dealradar.api.admin import build_admin_router
 from dealradar.core.security import issue_token, verify_token
 from dealradar.models import Alert, Offer, PriceHistory, Priority, Product, User, WatchItem
 from dealradar.retailers.base import ScanError, UnsupportedUrl
+from dealradar.observability.logs import log_event
+from dealradar.observability.metrics import AppMetrics, db_metrics
 from dealradar.realtime.hub import TOPICS, Hub, Relay
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.services import watchlist as watch_svc
@@ -105,6 +109,23 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
 
     app = FastAPI(title="DealRadar", lifespan=lifespan)
     app.state.hub = hub
+    metrics = app.state.metrics = AppMetrics()
+    log = logging.getLogger("dealradar.api")
+
+    @app.middleware("http")
+    async def observe(request: Request, call_next):
+        start = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        except Exception as exc:
+            log_event(log, "request_failed", logging.ERROR, method=request.method, path=request.url.path, error=repr(exc))
+            raise
+        finally:
+            route = getattr(request.scope.get("route"), "path", "unmatched")  # template, not raw path
+            metrics.observe(request.method, route, status, time.perf_counter() - start)
 
     async def db():
         async with session_factory() as session:
@@ -119,6 +140,14 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         return user
 
     app.include_router(build_admin_router(db, current_user, registry.codes, queue_stats, worker_stats))
+
+    @app.get("/metrics")
+    async def prometheus(user: User = Depends(current_user), session=Depends(db)):
+        """Prometheus scrape target; send the admin token as `Authorization: Bearer ...`."""
+        if not user.is_admin:
+            raise HTTPException(403, "admin only")
+        lines = metrics.render(hub.size) + await db_metrics(session)
+        return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
     # ---- realtime (M17) ----
     @app.websocket("/ws")
