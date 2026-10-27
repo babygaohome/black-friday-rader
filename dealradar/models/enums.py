@@ -31,3 +31,9 @@ class NotificationStatus(str, enum.Enum):
     SENT = "SENT"
     FAILED = "FAILED"
     RETRY = "RETRY"
+
+
+class ReviewStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    REJECTED = "REJECTED"

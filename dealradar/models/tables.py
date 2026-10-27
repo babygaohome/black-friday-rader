@@ -6,7 +6,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from dealradar.core.db import Base
-from dealradar.models.enums import AlertType, NotificationStatus, Priority, StockStatus
+from dealradar.models.enums import AlertType, NotificationStatus, Priority, ReviewStatus, StockStatus
 
 
 def _now() -> datetime:
@@ -216,3 +216,19 @@ class AlertRule(Base):
     watch_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("watch_items.id", ondelete="CASCADE"), index=True)
     conditions: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MatchReview(Base):
+    """A low-confidence match waiting for a human (design doc section 40)."""
+
+    __tablename__ = "match_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    offer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("offers.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"))  # product the offer currently sits on
+    suggested_product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"))
+    confidence: Mapped[Decimal] = mapped_column(Numeric(4, 3))
+    method: Mapped[str] = mapped_column(String(30))
+    status: Mapped[ReviewStatus] = mapped_column(Enum(ReviewStatus), default=ReviewStatus.PENDING, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
