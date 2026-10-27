@@ -114,6 +114,8 @@ class Offer(TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), default="AUD")
     stock_status: Mapped[StockStatus] = mapped_column(Enum(StockStatus), default=StockStatus.UNKNOWN)
     last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # failure backoff (and dispatch claim): the dispatcher leaves the offer alone until this time
+    next_scan_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     product: Mapped[Product | None] = relationship(back_populates="offers")
