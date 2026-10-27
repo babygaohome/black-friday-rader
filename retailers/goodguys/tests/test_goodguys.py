@@ -19,13 +19,43 @@ def load(name):
     return (FIX / name).read_text()
 
 
-def test_normal_price():
-    raw = parse_product(load("goodguys_product_normal.html"), URL)
+REAL = "https://www.thegoodguys.com.au/"
+
+
+# Real pages fetched 2026-10-27 (trimmed to the JSON-LD and the price section).
+def test_real_normal_price():
+    raw = parse_product(load("goodguys_real_normal.html"), REAL + "bosch-series-4-flat-door-freestanding-dishwasher-brushed-steel-smp4hvi01a")
     n = normalize_offer(raw)
-    assert raw.retailer == "goodguys" and raw.retailer_sku == "SONWH1000XM6B"
-    assert n.price.item_price == Decimal("549.00") and n.price.original_price is None
+    assert (raw.retailer, raw.retailer_sku) == ("goodguys", "50099666")
+    assert n.price.item_price == Decimal("899.00") and n.price.original_price is None
     assert n.stock == StockStatus.IN_STOCK
-    assert (raw.brand, raw.mpn, raw.gtin) == ("Sony", "WH1000XM6B", "4548736145871")
+    assert raw.brand == "Bosch" and raw.gtin and raw.mpn  # model number used as MPN
+
+
+def test_real_sale_price_from_strikethrough_ticket():
+    raw = parse_product(load("goodguys_real_sale.html"), REAL + "acer-aspire-lite-14-14-inches-ryzen-3-8gb-256gb-laptop-nxdpfsa001")
+    n = normalize_offer(raw)
+    assert raw.retailer_sku == "50098090" and raw.title == 'Acer Aspire Lite 14 14" Ryzen 3 8GB 256GB Laptop'
+    assert n.price.item_price == Decimal("639.00") and n.price.original_price == Decimal("799.00")
+    assert n.price.retailer_discount_pct == Decimal("20.03")
+    assert n.stock == StockStatus.IN_STOCK
+    assert (raw.brand, raw.mpn, raw.gtin) == ("Acer", "NX.DPFSA.001", "4711474892812")
+
+
+def test_real_coming_soon_is_not_removed():
+    # The real page has a Product node with no offers; the old parser called it PRODUCT_REMOVED.
+    raw = parse_product(load("goodguys_real_coming_soon.html"), REAL + "ring-spotlight-cam-2k-battery-2nd-gen-black-b0fwdwtnb9")
+    n = normalize_offer(raw)
+    assert raw.retailer_sku == "50099726"
+    assert n.price.item_price == Decimal("279") and n.price.original_price is None
+    assert n.stock == StockStatus.OUT_OF_STOCK
+
+
+def test_real_agency_product_without_availability():
+    n = normalize_offer(parse_product(load("goodguys_real_agency_no_availability.html"),
+                                      REAL + "fisher-and-paykel-series-9-76cm-warming-drawer-grey-glass-wb76smg3"))
+    assert n.retailer_sku == "50099078" and n.price.item_price == Decimal("2999.00")
+    assert n.stock == StockStatus.UNKNOWN
 
 
 def test_sku_falls_back_to_url_even_with_query_string():
@@ -34,12 +64,7 @@ def test_sku_falls_back_to_url_even_with_query_string():
     assert raw.retailer_sku == "sony-wh-1000xm6-wireless-noise-cancelling-headphones-black"
 
 
-def test_sale_price():
-    n = normalize_offer(parse_product(load("goodguys_sale.html"), URL))
-    assert n.price.item_price == Decimal("399.00") and n.price.original_price == Decimal("549.00")
-    assert n.price.retailer_discount_pct == Decimal("27.32")
-
-
+# No real out-of-stock Good Guys page was found on 2026-10-27; this one stays synthetic.
 def test_out_of_stock():
     assert normalize_offer(parse_product(load("goodguys_out_of_stock.html"), URL)).stock == StockStatus.OUT_OF_STOCK
 
@@ -62,7 +87,7 @@ def adapter_with(status, body=""):
 
 
 async def test_adapter_fetch_ok_and_http_errors():
-    assert (await adapter_with(200, load("goodguys_sale.html")).fetch_product(URL)).price == "399.00"
+    assert (await adapter_with(200, load("goodguys_real_sale.html")).fetch_product(URL)).price == "639.00"
     for status, error in [(429, ScanErrorType.RATE_LIMIT), (403, ScanErrorType.CAPTCHA), (404, ScanErrorType.PRODUCT_REMOVED),
                           (302, ScanErrorType.UNKNOWN), (503, ScanErrorType.NETWORK_ERROR)]:
         with pytest.raises(ScanError) as exc:
