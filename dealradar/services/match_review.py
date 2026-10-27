@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dealradar.models import MatchReview, Offer, Product, ReviewStatus, WatchItem
+from dealradar.models import Alert, MatchReview, Offer, Product, ReviewStatus, WatchItem
 
 
 class ReviewNotPending(Exception):
@@ -38,6 +38,11 @@ async def confirm(session: AsyncSession, review_id: uuid.UUID) -> Product:
         # users watching both: keep their existing watch on the target, drop the duplicate
         await session.execute(delete(WatchItem).where(WatchItem.product_id == temp_id, WatchItem.user_id.in_(already)))
         await session.execute(update(WatchItem).where(WatchItem.product_id == temp_id).values(product_id=target_id))
+        # everything that still points at the stand-in follows the offer to the real product
+        await session.execute(update(Alert).where(Alert.product_id == temp_id).values(product_id=target_id))
+        await session.execute(update(MatchReview).where(MatchReview.product_id == temp_id).values(product_id=target_id))
+        await session.execute(
+            update(MatchReview).where(MatchReview.suggested_product_id == temp_id).values(suggested_product_id=target_id))
         remaining = (await session.execute(
             select(func.count()).select_from(Offer).where(Offer.product_id == temp_id, Offer.id != offer.id)
         )).scalar()
