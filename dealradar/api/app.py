@@ -1,14 +1,17 @@
+import asyncio
+import contextlib
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from dealradar.core.security import issue_token, verify_token
 from dealradar.models import Alert, Offer, PriceHistory, Priority, Product, User, WatchItem
 from dealradar.retailers.base import ScanError, UnsupportedUrl
+from dealradar.realtime.hub import TOPICS, Hub, Relay, dumps
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.services import watchlist as watch_svc
 from dealradar.services.catalog import add_from_url
@@ -81,8 +84,24 @@ def _deal_out(offer: Offer, product: Product, a: DealAnalysis) -> dict:
     }
 
 
-def create_app(session_factory, registry: RetailerRegistry, secret_key: str, token_ttl: int = 7 * 24 * 3600) -> FastAPI:
-    app = FastAPI(title="DealRadar")
+def create_app(session_factory, registry: RetailerRegistry, secret_key: str, token_ttl: int = 7 * 24 * 3600,
+               hub: Hub | None = None, relay: Relay | None = None) -> FastAPI:
+    """relay: optional long-running coroutine fed the hub (e.g. Redis pub/sub -> hub), run for the app's lifetime."""
+    hub = hub or Hub()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        task = asyncio.create_task(relay(hub)) if relay else None
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(title="DealRadar", lifespan=lifespan)
+    app.state.hub = hub
 
     async def db():
         async with session_factory() as session:
@@ -95,6 +114,48 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         if user is None or user.status != "ACTIVE":
             raise HTTPException(401, "invalid or missing token")
         return user
+
+    # ---- realtime (M17) ----
+    @app.websocket("/ws")
+    async def realtime(ws: WebSocket, token: str = "", topics: str = ""):
+        """Browsers cannot set headers on a WebSocket, so the token travels in the query string."""
+        user_id = verify_token(secret_key, token)
+        wanted = {t for t in topics.split(",") if t}
+        if user_id is None or not wanted <= TOPICS:
+            await ws.close(code=4401 if user_id is None else 4400)
+            return
+        async with session_factory() as session:
+            user = await session.get(User, uuid.UUID(user_id))
+        if user is None or user.status != "ACTIVE":
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        client = hub.connect(user_id, wanted or None)
+        await ws.send_json({"event": "connected", "data": {"topics": sorted(client.topics)}})
+
+        async def pump():
+            while True:
+                await ws.send_text(dumps(await client.queue.get()))  # payloads hold Decimals, which send_json cannot encode
+
+        async def listen():
+            while True:
+                msg = await ws.receive_json()
+                action = msg.get("action") if isinstance(msg, dict) else None
+                if action == "ping":
+                    await ws.send_json({"event": "pong"})
+                elif action == "subscribe" and isinstance(msg.get("topics"), list):
+                    client.topics = (set(msg["topics"]) & TOPICS) or set(TOPICS)
+                    await ws.send_json({"event": "subscribed", "data": {"topics": sorted(client.topics)}})
+
+        tasks = [asyncio.create_task(pump()), asyncio.create_task(listen())]
+        try:
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+            hub.disconnect(client)
+            with contextlib.suppress(Exception):
+                await ws.close()
 
     # ---- auth / users ----
     @app.post("/auth/register", status_code=201)

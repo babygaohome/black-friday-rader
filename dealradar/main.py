@@ -2,12 +2,22 @@
 from dealradar.api.app import create_app
 from dealradar.core.config import get_settings
 from dealradar.core.db import make_engine, make_session_factory
+from dealradar.realtime.hub import run_redis_relay
 from dealradar.retailers.builtin import build_default_registry
 
 _settings = get_settings()
+
+
+async def _relay(hub):
+    import redis.asyncio as aioredis
+
+    await run_redis_relay(aioredis.from_url(_settings.redis_url), hub)
+
+
 app = create_app(
     make_session_factory(make_engine(_settings.database_url)),
     build_default_registry(),
     _settings.secret_key,
     _settings.token_ttl_seconds,
+    relay=_relay,
 )

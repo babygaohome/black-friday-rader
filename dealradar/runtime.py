@@ -11,6 +11,8 @@ from dealradar.core.db import make_engine, make_session_factory
 from dealradar.events import EventBus
 from dealradar.models import Notification, NotificationStatus, Offer, Retailer
 from dealradar.notifications.telegram import TelegramNotifier
+from dealradar.realtime.hub import Broadcaster, NullBroadcaster, RedisBroadcaster
+from dealradar.realtime.publisher import RealtimePublisher
 from dealradar.retailers.builtin import build_default_registry
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.scanning.dispatcher import DueScan, claim, due_scans
@@ -26,22 +28,28 @@ class Runtime:
     bus: EventBus
     notifier: TelegramNotifier | None
     event_mode: str = "NORMAL"
+    realtime: RealtimePublisher | None = None
 
 
 def build_runtime(settings: Settings, lock: LockBackend | None = None, cooldown: CooldownStore | None = None,
-                  registry: RetailerRegistry | None = None, notifier_transport=None, session_factory=None) -> Runtime:
+                  registry: RetailerRegistry | None = None, notifier_transport=None, session_factory=None,
+                  broadcaster: Broadcaster | None = None) -> Runtime:
     if lock is None or cooldown is None:
         import redis.asyncio as aioredis
 
         client = aioredis.from_url(settings.redis_url)
         lock = lock or RedisLock(client)
         cooldown = cooldown or RedisCooldown(client)
+        broadcaster = broadcaster or RedisBroadcaster(client)
+    broadcaster = broadcaster or NullBroadcaster()
     sf = session_factory or make_session_factory(make_engine(settings.database_url))
     notifier = TelegramNotifier(settings.telegram_bot_token, notifier_transport) if (
         settings.telegram_bot_token or notifier_transport) else None
     bus = EventBus()
-    AlertEngine(sf, cooldown, notifier).register(bus)
-    return Runtime(sf, registry or build_default_registry(), lock, bus, notifier, settings.event_mode)
+    realtime = RealtimePublisher(sf, broadcaster)
+    AlertEngine(sf, cooldown, notifier, on_alert=realtime.on_alert).register(bus)
+    realtime.register(bus)
+    return Runtime(sf, registry or build_default_registry(), lock, bus, notifier, settings.event_mode, realtime)
 
 
 async def run_scan(rt: Runtime, offer_id: uuid.UUID) -> ScanResult | None:
@@ -52,7 +60,11 @@ async def run_scan(rt: Runtime, offer_id: uuid.UUID) -> ScanResult | None:
         retailer = await session.get(Retailer, offer.retailer_id)
         if retailer is None or retailer.code not in rt.registry.codes():
             return None
-        return await scan_offer(session, offer, rt.registry.get(retailer.code), rt.lock, rt.bus)
+        result = await scan_offer(session, offer, rt.registry.get(retailer.code), rt.lock, rt.bus)
+        if rt.realtime and result.status != "SKIPPED_LOCKED":
+            await rt.realtime.on_scan(
+                retailer.code, offer_id, result.status, result.error_type.value if result.error_type else None)
+        return result
 
 
 async def find_due(rt: Runtime) -> list[DueScan]:
