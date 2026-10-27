@@ -1,16 +1,17 @@
 """Alert engine (M13): decides whether a user should be told. Deal analysis (scores) lives elsewhere."""
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dealradar.alerts.cooldown import CooldownStore, cooldown_key
 from dealradar.events import PriceChanged, StockChanged
+from dealradar.services.deals import analyze_offer
+from dealradar.services.history import prior_stats
 from dealradar.models import (
-    Alert, AlertType, Notification, Offer, PriceHistory, StockStatus, UserPreference, WatchItem,
+    Alert, AlertType, Notification, Offer, StockStatus, UserPreference, WatchItem,
 )
 
 _BUYABLE = {StockStatus.IN_STOCK, StockStatus.LOW_STOCK}
@@ -23,18 +24,6 @@ class AlertCandidate:
     watch: WatchItem
     price: Decimal
     previous_price: Decimal | None
-
-
-async def _prior_stats(session: AsyncSession, offer_id: uuid.UUID, now: datetime):
-    """All-time low and 30-day average over valid history *excluding the newest row* (the one that just triggered us)."""
-    newest = (await session.execute(select(func.max(PriceHistory.id)).where(PriceHistory.offer_id == offer_id))).scalar()
-    base = (PriceHistory.offer_id == offer_id, PriceHistory.flagged.is_(False), PriceHistory.id != newest)
-    low = (await session.execute(select(func.min(PriceHistory.effective_price)).where(*base))).scalar()
-    cutoff = now - timedelta(days=30)
-    rows = (await session.execute(select(PriceHistory.effective_price, PriceHistory.timestamp).where(*base))).all()
-    recent = [Decimal(p) for p, ts in rows if (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)) >= cutoff]
-    avg30 = (sum(recent) / len(recent)) if recent else None
-    return (Decimal(low) if low is not None else None), avg30
 
 
 def evaluate_price_change(
@@ -70,7 +59,7 @@ def evaluate_stock_change(event: StockChanged, watch: WatchItem) -> list[AlertCa
 
 
 async def _emit(
-    session: AsyncSession, cooldown: CooldownStore, offer: Offer, cands: list[AlertCandidate]
+    session: AsyncSession, cooldown: CooldownStore, offer: Offer, cands: list[AlertCandidate], deal_score: int | None = None
 ) -> list[tuple[Alert, list[Notification]]]:
     emitted = []
     for c in cands:
@@ -80,7 +69,7 @@ async def _emit(
             continue
         alert = Alert(
             type=c.type, user_id=c.watch.user_id, watch_item_id=c.watch.id, product_id=offer.product_id,
-            offer_id=offer.id, price=c.price, previous_price=c.previous_price,
+            offer_id=offer.id, price=c.price, previous_price=c.previous_price, deal_score=deal_score,
         )
         session.add(alert)
         await session.flush()
@@ -113,8 +102,8 @@ class AlertEngine:
             watchers = await self._watchers(session, offer) if offer else []
             if not watchers:
                 return []
-            low, avg = await _prior_stats(session, offer.id, event.timestamp)
-            cands = [c for w in watchers for c in evaluate_price_change(event, offer, w, low, avg)]
+            stats = await prior_stats(session, offer.id, event.timestamp)
+            cands = [c for w in watchers for c in evaluate_price_change(event, offer, w, stats.all_time_low, stats.avg_30d)]
             return await self._finish(session, offer, cands)
 
     async def on_stock_changed(self, event: StockChanged) -> list[Alert]:
@@ -125,7 +114,8 @@ class AlertEngine:
             return await self._finish(session, offer, cands) if cands else []
 
     async def _finish(self, session: AsyncSession, offer: Offer, cands: list[AlertCandidate]) -> list[Alert]:
-        emitted = await _emit(session, self._cooldown, offer, cands)
+        analysis = await analyze_offer(session, offer) if cands else None
+        emitted = await _emit(session, self._cooldown, offer, cands, analysis.score.score if analysis else None)
         await session.commit()
         if self._notifier:
             for _, notes in emitted:

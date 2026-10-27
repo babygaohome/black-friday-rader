@@ -87,3 +87,45 @@ async def compute_metrics(session: AsyncSession, offer_id: uuid.UUID, now: datet
         all_time_low=low([p for p, _ in points]),
         volatility=round(vol, 4),
     )
+
+
+@dataclass
+class PriorStats:
+    """Statistics over valid history *before* the newest observation, so "normal price" and "all-time low"
+    are not contaminated by the price being judged."""
+    count: int
+    all_time_low: Decimal | None
+    low_30d: Decimal | None
+    low_90d: Decimal | None
+    avg_30d: Decimal | None
+    avg_90d: Decimal | None
+    latest: Decimal | None  # the newest valid observation (the price being judged)
+    previous: Decimal | None  # the observation before it
+
+
+async def prior_stats(session: AsyncSession, offer_id: uuid.UUID, now: datetime | None = None) -> PriorStats:
+    now = now or datetime.now(timezone.utc)
+    rows = (
+        await session.execute(
+            select(PriceHistory.effective_price, PriceHistory.timestamp)
+            .where(PriceHistory.offer_id == offer_id, PriceHistory.flagged.is_(False))
+            .order_by(PriceHistory.timestamp, PriceHistory.id)
+        )
+    ).all()
+    points = [(Decimal(p), _aware(ts)) for p, ts in rows]
+    latest = points[-1][0] if points else None
+    previous = points[-2][0] if len(points) >= 2 else None
+    prior = points[:-1]
+
+    def window(days: int) -> list[Decimal]:
+        cutoff = now - timedelta(days=days)
+        return [p for p, ts in prior if ts >= cutoff]
+
+    def low(vals):
+        return min(vals) if vals else None
+
+    def avg(vals):
+        return (sum(vals) / len(vals)).quantize(Decimal("0.01")) if vals else None
+
+    w30, w90 = window(30), window(90)
+    return PriorStats(len(prior), low([p for p, _ in prior]), low(w30), low(w90), avg(w30), avg(w90), latest, previous)

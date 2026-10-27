@@ -12,6 +12,7 @@ from dealradar.retailers.base import ScanError, UnsupportedUrl
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.services import watchlist as watch_svc
 from dealradar.services.catalog import add_from_url
+from dealradar.services.deals import DealAnalysis, analyze_offer
 from dealradar.services.history import compute_metrics
 from dealradar.services.users import EmailTaken, authenticate, register_user
 
@@ -65,6 +66,18 @@ def _offer_out(o: Offer) -> dict:
         "title": o.title, "price": o.current_price, "effective_price": o.current_effective_price,
         "original_price": o.original_price, "currency": o.currency, "stock": o.stock_status.value,
         "last_scanned_at": o.last_scanned_at,
+    }
+
+
+def _deal_out(offer: Offer, product: Product, a: DealAnalysis) -> dict:
+    return {
+        "product_id": str(product.id), "product": product.name, "offer_id": str(offer.id),
+        "retailer": offer.retailer.code, "url": offer.url, "price": a.price,
+        "stock": offer.stock_status.value, "deal_score": a.score.score, "grade": a.score.grade,
+        "verified": a.score.verified, "new_all_time_low": a.score.new_all_time_low,
+        "retailer_discount_pct": a.discount.retailer_discount_pct, "actual_discount_pct": a.discount.actual_discount_pct,
+        "normal_price": a.discount.normal_price, "discount_verdict": a.discount.verdict,
+        "last_scanned_at": offer.last_scanned_at,
     }
 
 
@@ -161,9 +174,17 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
         priced = [o for o in offers if o.current_effective_price is not None]
         best = min(priced, key=lambda o: o.current_effective_price, default=None)
         metrics = await compute_metrics(session, best.id) if best else None
+        analysis = await analyze_offer(session, best) if best else None
         return {
             "id": str(p.id), "name": p.name, "brand": p.brand,
             "best_price": best.current_effective_price if best else None,
+            "deal": None if analysis is None else {
+                "deal_score": analysis.score.score, "grade": analysis.score.grade, "verified": analysis.score.verified,
+                "new_all_time_low": analysis.score.new_all_time_low,
+                "retailer_discount_pct": analysis.discount.retailer_discount_pct,
+                "actual_discount_pct": analysis.discount.actual_discount_pct,
+                "discount_verdict": analysis.discount.verdict,
+            },
             "metrics": None if metrics is None else {
                 "low_30d": metrics.low_30d, "low_90d": metrics.low_90d, "avg_30d": metrics.avg_30d,
                 "all_time_low": metrics.all_time_low,
@@ -247,6 +268,32 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
             raise HTTPException(404, "alert not found")
         a.read = True
         await session.commit()
+
+    # ---- deals ----
+    async def _analyzed(session, limit: int, order_scanned: bool = False):
+        stmt = select(Offer, Product).join(Product, Product.id == Offer.product_id).where(
+            Offer.active.is_(True), Offer.current_effective_price.is_not(None))
+        stmt = stmt.order_by(Offer.last_scanned_at.desc().nulls_last()).limit(min(max(limit, 1), 200))
+        out = []
+        for offer, product in (await session.execute(stmt)).all():
+            analysis = await analyze_offer(session, offer)
+            if analysis:
+                out.append(_deal_out(offer, product, analysis))
+        return out
+
+    @app.get("/deals")
+    async def deals(min_score: int = 50, limit: int = 100, user: User = Depends(current_user), session=Depends(db)):
+        rows = [d for d in await _analyzed(session, limit) if d["deal_score"] >= min_score]
+        return sorted(rows, key=lambda d: d["deal_score"], reverse=True)
+
+    @app.get("/deals/hot")
+    async def hot_deals(limit: int = 100, user: User = Depends(current_user), session=Depends(db)):
+        rows = [d for d in await _analyzed(session, limit) if d["deal_score"] >= 85]
+        return sorted(rows, key=lambda d: d["deal_score"], reverse=True)
+
+    @app.get("/deals/latest")
+    async def latest_deals(limit: int = 50, user: User = Depends(current_user), session=Depends(db)):
+        return await _analyzed(session, limit)
 
     @app.get("/healthz")
     async def healthz():
