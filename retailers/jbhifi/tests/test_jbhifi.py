@@ -28,6 +28,18 @@ def test_normal_price():
     assert (raw.brand, raw.mpn, raw.gtin) == ("Sony", "WH1000XM6B", "4548736145871")
 
 
+def test_real_normal_price():
+    # Real page fetched 2026-10-27 (200 this time; an earlier product URL got the 429 challenge).
+    url = "https://www.jbhifi.com.au/products/lenovo-15iph12-15-3-2-8k-oled-touch-googlebook-intel-core-ultra-5-325256gb"
+    raw = parse_product(load("jbhifi_real_normal.html"), url)
+    n = normalize_offer(raw)
+    assert (raw.retailer_sku, raw.brand, raw.gtin) == ("915278", "LENOVO", "828132231358")
+    assert raw.title.startswith("Lenovo 15IPH12")
+    # JB lists a ListPrice equal to the current price; that must not count as a discount.
+    assert n.price.item_price == Decimal("2199.00") and n.price.original_price is None
+    assert n.stock == StockStatus.IN_STOCK
+
+
 def test_sale_price():
     n = normalize_offer(parse_product(load("jbhifi_sale.html"), URL))
     assert n.price.item_price == Decimal("399.00")
