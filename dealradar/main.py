@@ -25,6 +25,7 @@ app = create_app(
     _settings.secret_key,
     _settings.token_ttl_seconds,
     relay=_relay,
+    cors_origins=[o.strip() for o in _settings.cors_origins.split(",") if o.strip()],
     queue_stats=redis_queue_stats(_redis),
     worker_stats=celery_worker_stats(celery_app),
 )

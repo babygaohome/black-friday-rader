@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from dealradar.observability.logs import log_event
 from dealradar.observability.metrics import AppMetrics, db_metrics
 from dealradar.realtime.hub import TOPICS, Hub, Relay, dumps
 from dealradar.retailers.registry import RetailerRegistry
+from dealradar.services import admin as svc_admin
 from dealradar.services import watchlist as watch_svc
 from dealradar.services.catalog import add_from_url
 from dealradar.services.deals import DealAnalysis, analyze_offer
@@ -92,7 +94,8 @@ def _deal_out(offer: Offer, product: Product, a: DealAnalysis) -> dict:
 
 def create_app(session_factory, registry: RetailerRegistry, secret_key: str, token_ttl: int = 7 * 24 * 3600,
                hub: Hub | None = None, relay: Relay | None = None,
-               queue_stats: QueueStats | None = None, worker_stats: WorkerStats | None = None) -> FastAPI:
+               queue_stats: QueueStats | None = None, worker_stats: WorkerStats | None = None,
+               cors_origins: list[str] | None = None) -> FastAPI:
     """relay: optional long-running coroutine fed the hub (e.g. Redis pub/sub -> hub), run for the app's lifetime."""
     hub = hub or Hub()
 
@@ -109,6 +112,8 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
 
     app = FastAPI(title="DealRadar", lifespan=lifespan)
     app.state.hub = hub
+    if cors_origins:
+        app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=["*"], allow_headers=["*"])
     metrics = app.state.metrics = AppMetrics()
     log = logging.getLogger("dealradar.api")
 
@@ -248,6 +253,16 @@ def create_app(session_factory, registry: RetailerRegistry, secret_key: str, tok
     @app.get("/retailers")
     async def retailers(user: User = Depends(current_user)):
         return [{"code": c, "name": registry.get(c).name, "domains": list(registry.get(c).domains)} for c in registry.codes()]
+
+    @app.get("/scanner/status")
+    async def scanner_status(user: User = Depends(current_user), session=Depends(db)):
+        """War Room: per-retailer health and how recently each was scanned."""
+        rows = await svc_admin.retailer_overview(session, set(registry.codes()))
+        last = max((r["last_scan_at"] for r in rows if r["last_scan_at"]), default=None)
+        return {
+            "last_scan_at": last,
+            "retailers": [{k: r[k] for k in ("code", "name", "status", "success_rate", "last_success", "last_scan_at")} for r in rows],
+        }
 
     @app.get("/products")
     async def products(q: str = "", limit: int = 50, user: User = Depends(current_user), session=Depends(db)):
