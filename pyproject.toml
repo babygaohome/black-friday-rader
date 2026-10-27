@@ -20,8 +20,8 @@ dev = ["pytest", "pytest-asyncio"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "retailers"]
 pythonpath = ["."]
 
 [tool.setuptools.packages.find]
-include = ["dealradar*"]
+include = ["dealradar*", "retailers*"]
