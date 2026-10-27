@@ -51,6 +51,13 @@ def test_real_sale_price():
     assert n.stock == StockStatus.IN_STOCK
 
 
+def test_real_preorder():
+    # Real page fetched 2026-10-27: not yet released, JSON-LD availability PreOrder.
+    n = normalize_offer(parse_product(load("jbhifi_real_preorder.html"), "https://www.jbhifi.com.au/products/apple-homeview-space-grey"))
+    assert n.retailer_sku == "915022" and n.price.item_price == Decimal("449.00") and n.price.original_price is None
+    assert n.stock == StockStatus.PREORDER
+
+
 def test_sale_price():
     # Synthetic pair to jbhifi_product_normal.html; scanner/alert tests elsewhere rely on the 549 -> 399 drop.
     n = normalize_offer(parse_product(load("jbhifi_sale.html"), URL))
