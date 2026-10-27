@@ -19,7 +19,39 @@ def load(name):
     return (FIX / name).read_text()
 
 
-def test_normal_price():
+REAL_URL = "https://www.officeworks.com.au/shop/officeworks/p/apple-tv-4k-aptv4kg04"
+
+
+# Real pages (fetched 2026-10-27): no JSON-LD, data lives in window.__INITIAL_STATE__.
+def test_real_page_price_from_initial_state():
+    raw = parse_product(load("officeworks_real_apple_tv.html"), REAL_URL)
+    n = normalize_offer(raw)
+    assert (raw.retailer, raw.retailer_sku, raw.title) == ("officeworks", "APTV4KG04", "Apple TV 4K")
+    assert n.price.item_price == Decimal("447.00") and n.price.original_price is None
+    assert (raw.brand, raw.mpn, raw.gtin) == ("Apple", "MLFF4X-A", "195951453200")
+    # Stock is loaded client-side on the real site, so it cannot be read from the static page.
+    assert n.stock == StockStatus.UNKNOWN
+
+
+def test_real_page_cents_price_under_ten_dollars():
+    n = normalize_offer(parse_product(load("officeworks_real_copy_paper.html"), URL))
+    assert n.retailer_sku == "JBCNCPA480" and n.price.item_price == Decimal("6.75")
+
+
+def test_real_page_falls_back_to_edlp_price_when_price_missing():
+    html = load("officeworks_real_apple_tv.html").replace('"price": 44700', '"price": null')
+    assert normalize_offer(parse_product(html, REAL_URL)).price.item_price == Decimal("447.00")
+
+
+def test_unpublished_product_is_removed():
+    html = load("officeworks_real_apple_tv.html").replace('"published": true', '"published": false')
+    with pytest.raises(ScanError) as exc:
+        parse_product(html, REAL_URL)
+    assert exc.value.error_type == ScanErrorType.PRODUCT_REMOVED
+
+
+# Synthetic JSON-LD pages: Officeworks does not currently serve these; they cover the fallback path.
+def test_jsonld_fallback_normal_price():
     raw = parse_product(load("officeworks_product_normal.html"), URL)
     n = normalize_offer(raw)
     assert raw.retailer == "officeworks" and raw.retailer_sku == "LGMXM3S"
@@ -28,13 +60,13 @@ def test_normal_price():
     assert (raw.brand, raw.mpn, raw.gtin) == ("Logitech", "910-006556", "5099206107874")
 
 
-def test_sale_price():
+def test_jsonld_fallback_sale_price():
     n = normalize_offer(parse_product(load("officeworks_sale.html"), URL))
     assert n.price.item_price == Decimal("399.00") and n.price.original_price == Decimal("549.00")
     assert n.price.retailer_discount_pct == Decimal("27.32")
 
 
-def test_out_of_stock():
+def test_jsonld_fallback_out_of_stock():
     assert normalize_offer(parse_product(load("officeworks_out_of_stock.html"), URL)).stock == StockStatus.OUT_OF_STOCK
 
 
@@ -56,7 +88,7 @@ def adapter_with(status, body=""):
 
 
 async def test_adapter_fetch_ok_and_http_errors():
-    assert (await adapter_with(200, load("officeworks_sale.html")).fetch_product(URL)).price == "399.00"
+    assert (await adapter_with(200, load("officeworks_real_apple_tv.html")).fetch_product(REAL_URL)).price == Decimal("447")
     for status, error in [(429, ScanErrorType.RATE_LIMIT), (403, ScanErrorType.CAPTCHA), (404, ScanErrorType.PRODUCT_REMOVED),
                           (302, ScanErrorType.UNKNOWN), (503, ScanErrorType.NETWORK_ERROR)]:
         with pytest.raises(ScanError) as exc:
