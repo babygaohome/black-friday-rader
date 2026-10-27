@@ -322,3 +322,11 @@ def test_ws_delivers_decimal_payloads_and_stays_open(ws_app):
 
 def test_topics_constant_matches_design_doc():
     assert TOPICS == {"price.updated", "stock.updated", "deal.created", "alert.triggered", "scanner.status"}
+
+
+def test_deal_threshold_depends_on_event_mode():
+    from dealradar.realtime.publisher import deal_min_score
+
+    assert deal_min_score("NORMAL") == 85
+    assert deal_min_score("black_friday") == 90
+    assert deal_min_score("BLACK_FRIDAY", 80, 95) == 95

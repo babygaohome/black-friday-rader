@@ -33,6 +33,21 @@ docker compose exec api python -m dealradar.cli make-admin 你的邮箱
 
 `init` 服务每次启动会执行一次 `python -m dealradar.cli migrate`（Alembic 迁移到最新，已是最新则不做事；以前用 `init-db` 建的库会先自动识别并 stamp，再补齐缺的迁移）。`PUBLIC_API_URL` 在构建前端镜像时写入，浏览器直接访问它，所以要改地址需重新 `docker compose build frontend`。
 
+### HTTPS（Caddy 反向代理）
+
+需要两个指向本机的域名（前端一个、API 一个），开放 80/443。在 `.env` 里设 `APP_DOMAIN`、`API_DOMAIN`，并把 `PUBLIC_API_URL`、`DEALRADAR_CORS_ORIGINS` 改成 `https://` 地址，然后：
+
+```bash
+docker compose build frontend
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+```
+
+Caddy 自动申请和续期 Let's Encrypt 证书，WebSocket 无需额外配置；3000/8000 端口不再对外开放。
+
+### Black Friday 模式
+
+`DEALRADAR_EVENT_MODE=BLACK_FRIDAY`：扫描间隔减半，`deal.created` 推送阈值从 85 提到 90（全场打折时只推最强的）。阈值可用 `DEALRADAR_DEAL_MIN_SCORE`、`DEALRADAR_BLACK_FRIDAY_DEAL_MIN_SCORE` 调整。文档没给具体规则，这是假设值。
+
 ## 运行（不用 Docker）
 
 ```bash

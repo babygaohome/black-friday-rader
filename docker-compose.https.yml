@@ -1,0 +1,30 @@
+# HTTPS in front of the stack. Use together with the main file:
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build -d
+# In .env set APP_DOMAIN / API_DOMAIN (see .env.example); PUBLIC_API_URL and DEALRADAR_CORS_ORIGINS must use https://.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - frontend
+      - api
+
+  # Only Caddy is public; the app containers are reachable inside the compose network.
+  api:
+    ports: !reset []
+  frontend:
+    ports: !reset []
+
+volumes:
+  caddydata:
+  caddyconfig:

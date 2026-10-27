@@ -10,6 +10,13 @@ from dealradar.services.deals import analyze_offer
 log = logging.getLogger(__name__)
 
 DEAL_MIN_SCORE = 85  # "hot" grade and above is announced as deal.created
+# During Black Friday nearly everything is discounted, so announce only the strongest deals.
+# The spec gives no rule; this is an assumption, override with DEALRADAR_BLACK_FRIDAY_DEAL_MIN_SCORE.
+BLACK_FRIDAY_DEAL_MIN_SCORE = 90
+
+
+def deal_min_score(event_mode: str, normal: int = DEAL_MIN_SCORE, black_friday: int = BLACK_FRIDAY_DEAL_MIN_SCORE) -> int:
+    return black_friday if event_mode.upper() == "BLACK_FRIDAY" else normal
 
 
 class RealtimePublisher:

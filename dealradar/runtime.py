@@ -14,7 +14,7 @@ from dealradar.models import Notification, NotificationStatus, Offer, Retailer
 from dealradar.notifications.telegram import TelegramNotifier
 from dealradar.observability.logs import log_event
 from dealradar.realtime.hub import Broadcaster, NullBroadcaster, RedisBroadcaster
-from dealradar.realtime.publisher import RealtimePublisher
+from dealradar.realtime.publisher import RealtimePublisher, deal_min_score
 from dealradar.retailers.builtin import build_default_registry
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.scanning.dispatcher import DueScan, claim, due_scans
@@ -51,7 +51,10 @@ def build_runtime(settings: Settings, lock: LockBackend | None = None, cooldown:
     notifier = TelegramNotifier(settings.telegram_bot_token, notifier_transport) if (
         settings.telegram_bot_token or notifier_transport) else None
     bus = EventBus()
-    realtime = RealtimePublisher(sf, broadcaster)
+    realtime = RealtimePublisher(
+        sf, broadcaster,
+        deal_min_score=deal_min_score(settings.event_mode, settings.deal_min_score, settings.black_friday_deal_min_score),
+    )
     AlertEngine(sf, cooldown, notifier, on_alert=realtime.on_alert).register(bus)
     realtime.register(bus)
     return Runtime(sf, registry or build_default_registry(), lock, bus, notifier, settings.event_mode, realtime)
