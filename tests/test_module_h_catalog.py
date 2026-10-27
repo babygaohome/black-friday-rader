@@ -5,7 +5,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from dealradar.models import MatchReview, Offer, Product, ProductVariant, ReviewStatus, WatchItem
+from dealradar.models import Alert, AlertType, MatchReview, Offer, Product, ProductVariant, ReviewStatus, WatchItem
 from dealradar.retailers.base import RetailerAdapter
 from dealradar.retailers.registry import RetailerRegistry
 from dealradar.services.catalog import add_from_url
@@ -96,6 +96,8 @@ async def test_confirm_moves_offer_and_watchers_and_removes_standin(session, sho
     await add_watch(session, alice.id, b.product.id, target_price=Decimal("400"))  # watching the stand-in
     await add_watch(session, bob.id, b.product.id)
     await add_watch(session, bob.id, a.product.id)  # bob already watches the target
+    alert = Alert(type=AlertType.PRICE_DROP, user_id=alice.id, product_id=b.product.id, offer_id=b.offer.id, price=Decimal("399"))
+    session.add(alert)
     await session.commit()
     [review] = await list_pending(session)
     standin_id = b.product.id
@@ -106,6 +108,10 @@ async def test_confirm_moves_offer_and_watchers_and_removes_standin(session, sho
     offer = await session.get(Offer, b.offer.id)
     assert offer.product_id == a.product.id and offer.match_confidence == 1
     assert await session.get(Product, standin_id) is None
+    assert (await session.get(Alert, alert.id)).product_id == a.product.id  # history follows the offer
+    # the resolved review must not keep pointing at the deleted stand-in (a foreign-key error on PostgreSQL)
+    resolved = await session.get(MatchReview, review.id)
+    assert resolved.product_id == a.product.id and resolved.suggested_product_id == a.product.id
     watchers = (await session.execute(select(WatchItem.user_id).where(WatchItem.product_id == a.product.id))).scalars().all()
     assert sorted(map(str, watchers)) == sorted(map(str, [alice.id, bob.id]))  # no duplicate for bob
     assert await list_pending(session) == []
