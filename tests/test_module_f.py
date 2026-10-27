@@ -197,3 +197,44 @@ async def test_full_closed_loop(factory, registry, site, client):
 
     assert await retry_notifications(rt) == 0
     assert await run_scan(rt, uuid.uuid4()) is None  # unknown offer is ignored
+
+
+async def test_failed_offer_rests_and_dispatched_offer_is_claimed(factory, client, registry, site):
+    h = await signup(client)
+    pid = (await client.post("/products/from-url", json={"url": URL}, headers=h)).json()["product_id"]
+    await client.post("/watchlist", json={"product_id": pid}, headers=h)
+    rt = build_runtime(Settings(database_url="sqlite+aiosqlite:///:memory:"), lock=MemoryLock(), cooldown=MemoryCooldown(),
+                       registry=registry, session_factory=factory)
+    from dealradar.runtime import claim_due
+
+    [due] = await claim_due(rt)
+    assert await claim_due(rt) == []  # queued once; the next tick does not queue it again
+    async with factory() as s:
+        offer = await s.get(Offer, due.offer_id)
+        base = datetime.now(timezone.utc)
+        until = offer.next_scan_after if offer.next_scan_after.tzinfo else offer.next_scan_after.replace(tzinfo=timezone.utc)
+        assert 55 <= (until - base).total_seconds() <= 61
+        assert await due_scans(s, base + timedelta(seconds=30)) == []
+        assert len(await due_scans(s, base + timedelta(seconds=90))) == 1  # worker never ran: retried after the claim lapses
+
+    async def blocked(url):
+        return httpx.Response(429, text="slow down", request=httpx.Request("GET", url))
+
+    registry.get("jbhifi")._fetcher = blocked
+    assert (await run_scan(rt, due.offer_id)).status == "FAILED"
+    async with factory() as s:
+        offer = await s.get(Offer, due.offer_id)
+        until = offer.next_scan_after if offer.next_scan_after.tzinfo else offer.next_scan_after.replace(tzinfo=timezone.utc)
+        assert (until - datetime.now(timezone.utc)).total_seconds() > 400  # rate limited: rests ~10 minutes, not one tick
+        assert await due_scans(s, datetime.now(timezone.utc) + timedelta(seconds=120)) == []
+        assert len(await due_scans(s, datetime.now(timezone.utc) + timedelta(seconds=900))) == 1
+
+    site.page = "jbhifi_product_normal.html"
+    registry.get("jbhifi")._fetcher = site
+    async with factory() as s:  # rest is over: scan succeeds and the mark disappears
+        offer = await s.get(Offer, due.offer_id)
+        offer.next_scan_after = None
+        await s.commit()
+    assert (await run_scan(rt, due.offer_id)).status == "OK"
+    async with factory() as s:
+        assert (await s.get(Offer, due.offer_id)).next_scan_after is None
