@@ -13,7 +13,7 @@ from dealradar.models import Notification, NotificationStatus, Offer, Retailer
 from dealradar.notifications.telegram import TelegramNotifier
 from dealradar.retailers.builtin import build_default_registry
 from dealradar.retailers.registry import RetailerRegistry
-from dealradar.scanning.dispatcher import DueScan, due_scans
+from dealradar.scanning.dispatcher import DueScan, claim, due_scans
 from dealradar.scanning.locks import LockBackend, RedisLock
 from dealradar.scanning.scanner import ScanResult, scan_offer
 
@@ -58,6 +58,14 @@ async def run_scan(rt: Runtime, offer_id: uuid.UUID) -> ScanResult | None:
 async def find_due(rt: Runtime) -> list[DueScan]:
     async with rt.session_factory() as session:
         return await due_scans(session, event_mode=rt.event_mode)
+
+
+async def claim_due(rt: Runtime) -> list[DueScan]:
+    """What the scheduler tick enqueues: the due offers, marked so the next tick skips them."""
+    async with rt.session_factory() as session:
+        due = await due_scans(session, event_mode=rt.event_mode)
+        await claim(session, due)
+        return due
 
 
 async def retry_notifications(rt: Runtime) -> int:
