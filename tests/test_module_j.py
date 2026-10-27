@@ -307,5 +307,18 @@ def test_ws_receives_filtered_messages_ping_and_resubscribe(ws_app):
     assert hub.size == 0  # disconnect cleans up
 
 
+def test_ws_delivers_decimal_payloads_and_stays_open(ws_app):
+    """Real events carry Decimal prices; a serialisation failure used to drop the socket."""
+    tc, hub = ws_app
+    token, _ = register(tc)
+    with tc.websocket_connect(f"/ws?token={token}") as ws:
+        ws.receive_json()
+        tc.portal.call(hub.broadcast, make_message(PRICE_UPDATED, {"price": Decimal("399.50"), "old_price": Decimal("549")}))
+        msg = ws.receive_json()
+        assert msg["data"] == {"price": 399.5, "old_price": 549}
+        tc.portal.call(hub.broadcast, make_message(STOCK_UPDATED, {"n": 1}))
+        assert ws.receive_json()["data"] == {"n": 1}  # connection survived
+
+
 def test_topics_constant_matches_design_doc():
     assert TOPICS == {"price.updated", "stock.updated", "deal.created", "alert.triggered", "scanner.status"}
