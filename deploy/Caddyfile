@@ -1,0 +1,11 @@
+# HTTPS reverse proxy. Caddy gets and renews Let's Encrypt certificates automatically;
+# WebSocket (/ws) is proxied with no extra config. Both domains must point at this host (ports 80/443 open).
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}

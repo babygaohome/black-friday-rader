@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./dealradar.db"
     redis_url: str = "redis://localhost:6379/0"
     event_mode: str = "NORMAL"  # NORMAL | BLACK_FRIDAY
+    deal_min_score: int = 85  # deal.created threshold in NORMAL mode
+    black_friday_deal_min_score: int = 90  # stricter in BLACK_FRIDAY mode (assumption, see publisher.py)
     telegram_bot_token: str = ""
     amazon_paapi_access_key: str = ""
     amazon_paapi_secret_key: str = ""
