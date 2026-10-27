@@ -19,6 +19,7 @@
 | J | WebSocket 实时推送 `/ws?token=…&topics=…`（price.updated / stock.updated / deal.created / alert.triggered / scanner.status）；worker 经 Redis pub/sub 推给各 API 进程 |
 | K | 管理后台 `/admin/*`（管理员角色、零售商健康、队列/worker、失败任务、可疑价格、匹配复核确认/驳回）；用 `python -m dealradar.cli make-admin 邮箱` 授予管理员 |
 | L | 监控 `/metrics`（Prometheus 文本格式，管理员 token 抓取：API 延迟/错误/WS 连接数，扫描成功率、解析失败、HTTP 错误、验证码，价格变动、告警）与 JSON 结构化日志（`DEALRADAR_LOG_LEVEL`） |
+| M | 前端 `web/`（Next.js）：Dashboard、Watchlist、商品详情与价格图、Deals、War Room、Settings；`DEALRADAR_CORS_ORIGINS`、`/scanner/status`、`python -m dealradar.cli init-db` |
 
 ## 运行
 

@@ -1,4 +1,5 @@
-"""Operator commands: `python -m dealradar.cli make-admin user@example.com` (admin rights are never grantable via the API)."""
+"""Operator commands. `make-admin user@example.com` grants admin rights (never grantable via the API);
+`init-db` creates missing tables (development convenience until Alembic migrations exist)."""
 import argparse
 import asyncio
 import sys
@@ -6,7 +7,7 @@ import sys
 from sqlalchemy import select
 
 from dealradar.core.config import get_settings
-from dealradar.core.db import make_engine, make_session_factory
+from dealradar.core.db import create_all, make_engine, make_session_factory
 from dealradar.models import User
 
 
@@ -23,9 +24,14 @@ async def set_admin(session_factory, email: str, admin: bool = True) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dealradar.cli")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("init-db")
     for name in ("make-admin", "revoke-admin"):
         sub.add_parser(name).add_argument("email")
     args = parser.parse_args(argv)
+    if args.command == "init-db":
+        asyncio.run(create_all(make_engine(get_settings().database_url)))
+        print("tables ready")
+        return 0
     factory = make_session_factory(make_engine(get_settings().database_url))
     ok = asyncio.run(set_admin(factory, args.email, args.command == "make-admin"))
     print(f"{args.command}: {args.email}" if ok else f"no such user: {args.email}")

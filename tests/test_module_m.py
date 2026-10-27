@@ -58,3 +58,17 @@ async def test_scanner_status_for_war_room(factory):
         [jb] = status["retailers"]
         assert status["last_scan_at"] and jb["status"] == "ONLINE" and jb["last_scan_at"] and set(jb) == {
             "code", "name", "status", "success_rate", "last_success", "last_scan_at"}
+
+
+def test_cli_init_db_creates_tables(tmp_path, monkeypatch, capsys):
+    import sqlite3
+
+    from dealradar import cli
+
+    db = tmp_path / "fresh.db"
+    monkeypatch.setenv("DEALRADAR_DATABASE_URL", f"sqlite+aiosqlite:///{db}")
+    assert cli.main(["init-db"]) == 0
+    assert "tables ready" in capsys.readouterr().out
+    tables = {r[0] for r in sqlite3.connect(db).execute("select name from sqlite_master where type='table'")}
+    assert {"users", "offers", "price_history", "match_reviews"} <= tables
+    assert cli.main(["init-db"]) == 0  # idempotent
